@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CyberIndex Weekly Report</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Georgia", "Times New Roman", serif;
+      background: #fff; color: #1a1a2e; min-height: 100vh; padding: 2rem;
+    }
+    .container { max-width: 1375px; margin: 0 auto; }
+
+    /* ── Page header ── */
+    header { margin-bottom: 2rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 1rem; }
+    header h1 { font-size: 1.5rem; font-weight: 700; color: #0d1b2a; font-family: sans-serif; }
+    header p  { color: #5a6a7a; margin-top: 0.25rem; font-size: 0.9rem; font-family: sans-serif; }
+
+    /* ── Controls ── */
+    #pull-btn {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: #1a56db; color: #fff; border: none; border-radius: 4px;
+      padding: 0.55rem 1.2rem; font-size: 0.9rem; font-weight: 600;
+      font-family: sans-serif; cursor: pointer; transition: background 0.15s;
+    }
+    #pull-btn:hover:not(:disabled) { background: #1648c0; }
+    #pull-btn:disabled { background: #93acd3; cursor: not-allowed; }
+
+    #spinner {
+      display: none; margin-top: 1.25rem; align-items: center;
+      gap: 0.75rem; color: #3d5a80; font-size: 0.9rem; font-family: sans-serif;
+    }
+    .spin-ring {
+      width: 20px; height: 20px; border: 2px solid #c3d3ea;
+      border-top-color: #1a56db; border-radius: 50%;
+      animation: spin 0.75s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #error-banner {
+      display: none; margin-top: 1.25rem; background: #fde8e8;
+      border-left: 4px solid #e02424; color: #771d1d;
+      padding: 0.75rem 1rem; border-radius: 4px; font-size: 0.875rem; font-family: sans-serif;
+    }
+
+    #results-section { display: none; margin-top: 2rem; }
+
+    /* ── Download links ── */
+    .section-bar {
+      display: flex; align-items: baseline; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem;
+    }
+    .section-bar h2 { font-size: 1rem; font-weight: 700; font-family: sans-serif; color: #0d1b2a; }
+    .run-date { font-size: 0.8rem; color: #6b7280; font-family: sans-serif; }
+
+    .download-links { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.75rem; }
+    .download-links a {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      background: #f9fafb; border: 1px solid #d1d5db; color: #374151;
+      border-radius: 4px; padding: 0.35rem 0.8rem; font-size: 0.8rem;
+      font-family: sans-serif; font-weight: 500; text-decoration: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .download-links a:hover { background: #f3f4f6; border-color: #9ca3af; }
+
+    /* ── Chart ── */
+    .chart-section { margin-bottom: 2.5rem; }
+
+    .chart-title {
+      font-size: 1.15rem; font-weight: 700; color: #0d1b2a;
+      font-family: sans-serif; margin-bottom: 0.2rem;
+    }
+    .chart-subtitle {
+      font-size: 0.82rem; color: #4b5563; font-family: sans-serif;
+      margin-bottom: 0.6rem;
+    }
+
+    #chart-svg-wrap {
+      position: relative; width: 100%;
+      padding-bottom: 45%;   /* ~2.2:1 wide aspect ratio */
+      height: 0;
+      border-top: 1px solid #d1d5db;
+    }
+    #chart-svg {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    }
+    #chart-tip {
+      display: none; position: absolute; pointer-events: none;
+      background: rgba(15,23,42,0.9); color: #fff;
+      border-radius: 4px; padding: 6px 10px; font-size: 11px;
+      font-family: sans-serif; line-height: 1.6;
+      white-space: nowrap; z-index: 10;
+    }
+    .chart-source {
+      font-size: 0.75rem; color: #9ca3af; font-family: sans-serif;
+      margin-top: 0.4rem;
+    }
+
+    /* ── Table ── */
+    .table-wrapper {
+      overflow-x: auto; background: #fff; border-radius: 6px;
+      border: 1px solid #e5e7eb;
+    }
+    #table-container table {
+      width: 100%; border-collapse: collapse; font-size: 0.825rem;
+      font-family: sans-serif;
+    }
+    #table-container table thead tr { background: #f9fafb; }
+    #table-container table th {
+      padding: 0.6rem 0.85rem; text-align: left; font-weight: 600;
+      color: #374151; border-bottom: 1px solid #e5e7eb; white-space: nowrap;
+      cursor: pointer; user-select: none;
+    }
+    #table-container table th:hover { background: #f3f4f6; }
+    #table-container table th.sort-asc::after  { content: ' ▲'; font-size: 0.65rem; color: #6b7280; }
+    #table-container table th.sort-desc::after { content: ' ▼'; font-size: 0.65rem; color: #6b7280; }
+    #table-container table td {
+      padding: 0.5rem 0.85rem; border-bottom: 1px solid #f3f4f6; white-space: nowrap; color: #1f2937;
+    }
+    #table-container table tbody tr:last-child td { border-bottom: none; }
+    #table-container table tbody tr:hover { background: #f9fafb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>CyberIndex Weekly Report</h1>
+      <p>Top 20 cybersecurity companies by market cap &mdash; 10-minute interval data</p>
+    </header>
+
+    <button id="pull-btn">Pull Data</button>
+
+    <div id="spinner">
+      <div class="spin-ring"></div>
+      <span>Fetching data from LSEG &mdash; this typically takes 30&ndash;60 seconds&hellip;</span>
+    </div>
+
+    <div id="error-banner"></div>
+
+    <section id="results-section">
+
+      <!-- Chart -->
+      <div class="chart-section">
+        <div class="chart-title">WSJ Pro CyberIndex</div>
+        <div class="chart-subtitle">Last week's biggest gainer and loser among the 20 largest public cybersecurity firms, by market capitalization</div>
+        <div id="chart-svg-wrap">
+          <svg id="chart-svg" preserveAspectRatio="none"></svg>
+          <div id="chart-tip"></div>
+        </div>
+        <div class="chart-source">Source: LSEG</div>
+      </div>
+
+      <!-- Table -->
+      <div class="section-bar">
+        <h2>Top 20 Cyber Companies</h2>
+        <span class="run-date">Run date: <strong id="run-date"></strong></span>
+      </div>
+      <div class="download-links">
+        <a href="/download/charting">&#8659; Charting Data CSV</a>
+        <a href="/download/table">&#8659; Table CSV</a>
+      </div>
+      <div class="table-wrapper">
+        <div id="table-container"></div>
+      </div>
+
+    </section>
+  </div>
+
+  <script>
+    const pullBtn        = document.getElementById('pull-btn');
+    const spinner        = document.getElementById('spinner');
+    const errorBanner    = document.getElementById('error-banner');
+    const resultsSection = document.getElementById('results-section');
+    const tableContainer = document.getElementById('table-container');
+    const runDateEl      = document.getElementById('run-date');
+
+    function showSpinner()  { spinner.style.display = 'flex'; }
+    function hideSpinner()  { spinner.style.display = 'none'; }
+    function showError(msg) { errorBanner.textContent = msg; errorBanner.style.display = 'block'; }
+    function hideError()    { errorBanner.style.display = 'none'; }
+    function showResults()  { resultsSection.style.display = 'block'; }
+
+    // ── SVG chart ─────────────────────────────────────────────────────────────
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    // Internal coordinate space — viewBox scales to fill the container
+    const W = 1000, H = 450;
+    const PAD = { top: 20, right: 140, bottom: 40, left: 52 };
+    const CW = W - PAD.left - PAD.right;
+    const CH = H - PAD.top  - PAD.bottom;
+
+    // WSJ-style colors: dark teal gainer, green index, light blue loser
+    const COLORS = {
+      index:  '#4a9e6e',  // green
+      gainer: '#1d5c6e',  // dark teal
+      loser:  '#5bb8d4',  // light blue
+    };
+
+    function mkEl(tag, attrs) {
+      const el = document.createElementNS(SVG_NS, tag);
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      return el;
+    }
+
+    function renderChart(cd) {
+      const svg = document.getElementById('chart-svg');
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.innerHTML = '';
+
+      const labels = cd.labels;
+      const series = [
+        { values: cd.gainer_values, color: COLORS.gainer, name: cd.gainer_name },
+        { values: cd.cyber_index,   color: COLORS.index,  name: 'CyberIndex'   },
+        { values: cd.loser_values,  color: COLORS.loser,  name: cd.loser_name  },
+      ];
+
+      // Y range
+      const allVals = series.flatMap(s => s.values).filter(v => v != null && isFinite(v));
+      const minV = Math.min(...allVals), maxV = Math.max(...allVals);
+      const rangePad = (maxV - minV) * 0.1 || 0.01;
+      const lo = minV - rangePad, hi = maxV + rangePad;
+
+      const n = labels.length;
+      const xS = i => PAD.left + (i / (n - 1)) * CW;
+      const yS = v => PAD.top  + (1 - (v - lo) / (hi - lo)) * CH;
+
+      // Nice round y-axis ticks
+      const rawRange = hi - lo;
+      const roughStep = rawRange / 5;
+      const mag = Math.pow(10, Math.floor(Math.log10(roughStep)));
+      const step = Math.ceil(roughStep / mag) * mag;
+      const tickMin = Math.ceil(lo / step) * step;
+      const ticks = [];
+      for (let t = tickMin; t <= hi + step * 0.01; t = Math.round((t + step) * 1e10) / 1e10) {
+        if (t >= lo - step * 0.01) ticks.push(t);
+      }
+
+      // Light horizontal grid lines + y-axis labels
+      ticks.forEach((v, ti) => {
+        const y = yS(v);
+        svg.appendChild(mkEl('line', {
+          x1: PAD.left, x2: W - PAD.right, y1: y, y2: y,
+          stroke: '#e5e7eb', 'stroke-width': '1',
+        }));
+        const pct = Math.round(v * 100);
+        const lbl = document.createElementNS(SVG_NS, 'text');
+        lbl.setAttribute('x', PAD.left - 6);
+        lbl.setAttribute('y', y + 4);
+        lbl.setAttribute('text-anchor', 'end');
+        lbl.setAttribute('font-size', '13');
+        lbl.setAttribute('font-family', 'sans-serif');
+        lbl.setAttribute('fill', '#6b7280');
+        // Only show % on the top tick
+        lbl.textContent = ti === ticks.length - 1 ? `${pct}%` : `${pct}`;
+        svg.appendChild(lbl);
+      });
+
+      // Bold black zero line
+      if (lo < 0 && hi > 0) {
+        svg.appendChild(mkEl('line', {
+          x1: PAD.left, x2: W - PAD.right,
+          y1: yS(0), y2: yS(0),
+          stroke: '#111827', 'stroke-width': '2',
+        }));
+      }
+
+      // Day boundary labels at bottom (no vertical lines)
+      const dayBounds = [];
+      for (let i = 1; i < n; i++) {
+        if (labels[i].slice(0, 10) !== labels[i-1].slice(0, 10)) dayBounds.push(i);
+      }
+      dayBounds.forEach(i => {
+        // Parse "MM/DD/YYYY" from the formatted label
+        const parts = labels[i].slice(0, 10).split('/');  // MM/DD/YYYY
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const monthName = months[parseInt(parts[0], 10) - 1];
+        const day = parseInt(parts[1], 10);
+        const lbl = document.createElementNS(SVG_NS, 'text');
+        lbl.setAttribute('x', xS(i));
+        lbl.setAttribute('y', H - PAD.bottom + 20);
+        lbl.setAttribute('text-anchor', 'middle');
+        lbl.setAttribute('font-size', '13');
+        lbl.setAttribute('font-family', 'sans-serif');
+        lbl.setAttribute('fill', '#6b7280');
+        lbl.textContent = `${monthName} ${day}`;
+        svg.appendChild(lbl);
+      });
+
+      // Series lines + inline end labels
+      series.forEach(s => {
+        let d = '';
+        let lastX = null, lastY = null;
+        s.values.forEach((v, i) => {
+          if (v == null || !isFinite(v)) return;
+          const x = xS(i), y = yS(v);
+          d += (d === '' ? 'M' : 'L') + `${x.toFixed(1)},${y.toFixed(1)} `;
+          lastX = x; lastY = y;
+        });
+        if (!d) return;
+
+        svg.appendChild(mkEl('path', {
+          d, fill: 'none', stroke: s.color, 'stroke-width': '2.5',
+          'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+        }));
+
+        // Inline label at end of line
+        if (lastX !== null) {
+          const lbl = document.createElementNS(SVG_NS, 'text');
+          lbl.setAttribute('x', lastX + 8);
+          lbl.setAttribute('y', lastY + 4);
+          lbl.setAttribute('font-size', '12');
+          lbl.setAttribute('font-family', 'sans-serif');
+          lbl.setAttribute('fill', s.color);
+          lbl.setAttribute('font-weight', '600');
+          lbl.textContent = s.name;
+          svg.appendChild(lbl);
+        }
+      });
+
+      // Crosshair + hover overlay
+      const crosshair = mkEl('line', {
+        y1: PAD.top, y2: H - PAD.bottom,
+        stroke: '#94a3b8', 'stroke-width': '1', 'stroke-dasharray': '4,3',
+      });
+      crosshair.style.display = 'none';
+      svg.appendChild(crosshair);
+
+      const overlay = mkEl('rect', {
+        x: PAD.left, y: PAD.top, width: CW, height: CH, fill: 'transparent',
+      });
+      svg.appendChild(overlay);
+
+      const tip  = document.getElementById('chart-tip');
+      const wrap = document.getElementById('chart-svg-wrap');
+
+      overlay.addEventListener('mousemove', e => {
+        const rect = svg.getBoundingClientRect();
+        const svgX = (e.clientX - rect.left) * (W / rect.width);
+        const i    = Math.max(0, Math.min(n - 1, Math.round((svgX - PAD.left) / CW * (n - 1))));
+        const cx   = xS(i);
+        crosshair.setAttribute('x1', cx); crosshair.setAttribute('x2', cx);
+        crosshair.style.display = '';
+
+        const lines = [`<b>${labels[i]}</b>`];
+        series.forEach(s => {
+          const v = s.values[i];
+          if (v == null || !isFinite(v)) return;
+          const sign = v >= 0 ? '+' : '';
+          lines.push(`<span style="color:${s.color}">${s.name}</span>: <b>${sign}${(v*100).toFixed(2)}%</b>`);
+        });
+        tip.innerHTML = lines.join('<br>');
+        tip.style.display = 'block';
+
+        const wr = wrap.getBoundingClientRect();
+        let tx = e.clientX - wr.left + 14;
+        if (tx + tip.offsetWidth > wr.width - 8) tx = e.clientX - wr.left - tip.offsetWidth - 14;
+        tip.style.left = tx + 'px';
+        tip.style.top  = Math.max(0, e.clientY - wr.top - 14) + 'px';
+      });
+      overlay.addEventListener('mouseleave', () => {
+        crosshair.style.display = 'none';
+        tip.style.display = 'none';
+      });
+    }
+
+    // ── Sortable table ────────────────────────────────────────────────────────
+    function makeSortable() {
+      const table = document.querySelector('#table-container table');
+      if (!table) return;
+      const headers = table.querySelectorAll('th');
+      let sortCol = -1, sortAsc = true;
+
+      headers.forEach((th, col) => {
+        th.addEventListener('click', () => {
+          sortAsc = (sortCol === col) ? !sortAsc : true;
+          sortCol = col;
+          headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+          th.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
+          const tbody = table.querySelector('tbody');
+          Array.from(tbody.querySelectorAll('tr'))
+            .sort((a, b) => {
+              const av = a.cells[col].textContent.trim();
+              const bv = b.cells[col].textContent.trim();
+              const an = parseFloat(av.replace(/[$,%]/g, '').replace(/,/g, ''));
+              const bn = parseFloat(bv.replace(/[$,%]/g, '').replace(/,/g, ''));
+              const cmp = isNaN(an) || isNaN(bn) ? av.localeCompare(bv) : an - bn;
+              return sortAsc ? cmp : -cmp;
+            })
+            .forEach(r => tbody.appendChild(r));
+        });
+      });
+    }
+
+    // ── Pull data ─────────────────────────────────────────────────────────────
+    pullBtn.addEventListener('click', async () => {
+      pullBtn.disabled = true;
+      hideError();
+      showSpinner();
+      try {
+        const resp = await fetch('/run', { method: 'POST' });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+          runDateEl.textContent = data.run_date;
+          tableContainer.innerHTML = data.table_html;
+          makeSortable();
+          renderChart(data.chart_data);
+          showResults();
+        } else {
+          showError('Error: ' + (data.message || 'Unknown error from server.'));
+        }
+      } catch (err) {
+        showError('Network error: ' + err.message);
+      } finally {
+        hideSpinner();
+        pullBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
