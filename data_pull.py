@@ -124,25 +124,30 @@ def _get_avg_price(price_df: pd.DataFrame, shares: dict) -> pd.DataFrame:
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-def run_data_pull() -> tuple:
+def run_data_pull(n_days: int = 5, end_date: date = None) -> tuple:
     """
     Execute the full CyberIndex pipeline.
 
+    Args:
+        n_days:   Number of NYSE trading days to look back (default 5).
+        end_date: End date for the range (default today).
+
     Returns:
-        (time_changes, top_20_out) — both pd.DataFrames ready for CSV export.
+        (time_changes, top_20_out, past, today) — DataFrames plus the
+        resolved start and end dates.
 
     Raises:
         RuntimeError on any failure, with a human-readable message.
     """
     try:
-        today = date.today()
-        past  = _get_trading_days(5, today)[0].date()
+        today = end_date or date.today()
+        past  = _get_trading_days(n_days, today)[0].date()
 
         # ── 1. Get today's snapshot for the full universe ─────────────────────
         top = ld.get_data(
             universe=IDS,
             fields=['TR.CommonName', 'TR.TickerSymbol', 'TR.CompanyMarketCap',
-                    'TR.PriceClose', 'TR.Volume', 'TR.PriceDate'],
+                    'TR.PriceClose', 'TR.PriceDate'],
             parameters={'SDate': str(today), 'EDate': str(today)},
         )
         ordered = top.sort_values('Company Market Cap', ascending=False).reset_index(drop=True)
@@ -234,26 +239,24 @@ def run_data_pull() -> tuple:
         last_prices.columns = ['Instrument', 'Price Close']
 
         out_table = top_20[['Instrument', 'Company Common Name', 'Ticker Symbol',
-                             'Volume', 'Company Market Cap']].copy()
+                             'Company Market Cap']].copy()
         out_table['Date'] = str(today)
         out_table = pd.merge(out_table, last_prices, on='Instrument', how='left')
 
-        out_table['Weekly Change'] = out_table['Instrument'].map(wkly_change)
+        out_table['Period Change'] = out_table['Instrument'].map(wkly_change)
 
         col_map = {
             'Company Common Name': 'Company',
             'Ticker Symbol':       'Ticker',
             'Date':                'Date',
             'Price Close':         'Price Close',
-            'Weekly Change':       'Weekly Change',
-            'Volume':              'Volume',
+            'Period Change':       'Period Change',
             'Company Market Cap':  'Market Cap',
         }
         top_20_out = out_table[[k for k in col_map]].copy()
         top_20_out.rename(columns=col_map, inplace=True)
         top_20_out['Market Cap']    = top_20_out['Market Cap'].apply(_format_currency_round)
-        top_20_out['Weekly Change'] = top_20_out['Weekly Change'].apply(_format_percentage)
-        top_20_out['Volume']        = top_20_out['Volume'].apply(_format_int)
+        top_20_out['Period Change'] = top_20_out['Period Change'].apply(_format_percentage)
         top_20_out['Price Close']   = top_20_out['Price Close'].apply(_format_currency)
         top_20_out['Company']       = (
             top_20_out['Company']
@@ -262,7 +265,7 @@ def run_data_pull() -> tuple:
         )
         top_20_out.index = range(1, len(top_20_out) + 1)
 
-        return time_changes, top_20_out
+        return time_changes, top_20_out, past, today
 
     except Exception as exc:
         raise RuntimeError(f"Data pull failed: {exc}") from exc

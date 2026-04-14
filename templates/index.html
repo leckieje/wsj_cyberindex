@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CyberIndex Weekly Report</title>
+  <title>WSJ CyberIndex</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -19,6 +19,7 @@
     header p  { color: #5a6a7a; margin-top: 0.25rem; font-size: 0.9rem; font-family: sans-serif; }
 
     /* ── Controls ── */
+    .controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
     #pull-btn {
       display: inline-flex; align-items: center; gap: 0.5rem;
       background: #1a56db; color: #fff; border: none; border-radius: 4px;
@@ -27,6 +28,14 @@
     }
     #pull-btn:hover:not(:disabled) { background: #1648c0; }
     #pull-btn:disabled { background: #93acd3; cursor: not-allowed; }
+    .days-label {
+      font-size: 0.875rem; color: #4b5563; font-family: sans-serif;
+      display: flex; align-items: center; gap: 0.4rem;
+    }
+    #n-days {
+      width: 52px; padding: 0.3rem 0.4rem; border: 1px solid #d1d5db;
+      border-radius: 4px; font-size: 0.875rem; text-align: center;
+    }
 
     #spinner {
       display: none; margin-top: 1.25rem; align-items: center;
@@ -73,7 +82,7 @@
       font-family: sans-serif; margin-bottom: 0.2rem;
     }
     .chart-subtitle {
-      font-size: 0.82rem; color: #4b5563; font-family: sans-serif;
+      font-size: 1rem; color: #4b5563; font-family: sans-serif;
       margin-bottom: 0.6rem;
     }
 
@@ -126,11 +135,17 @@
 <body>
   <div class="container">
     <header>
-      <h1>CyberIndex Weekly Report</h1>
-      <p>Top 20 cybersecurity companies by market cap &mdash; 10-minute interval data</p>
+      <h1>WSJ CyberIndex</h1>
+      <p>Top 20 cybersecurity companies by market cap</p>
     </header>
 
-    <button id="pull-btn">Pull Data</button>
+    <div class="controls">
+      <button id="pull-btn">Get Data</button>
+      <label class="days-label">
+        Last <input id="n-days" type="number" value="5" min="1" max="252"> trading days
+      </label>
+    </div>
+    <div id="preview-range" style="margin-top:0.5rem; font-size:0.8rem; color:#6b7280; font-family:sans-serif;"></div>
 
     <div id="spinner">
       <div class="spin-ring"></div>
@@ -143,8 +158,7 @@
 
       <!-- Chart -->
       <div class="chart-section">
-        <div class="chart-title">WSJ Pro CyberIndex</div>
-        <div class="chart-subtitle">Last week's biggest gainer and loser among the 20 largest public cybersecurity firms, by market capitalization</div>
+        <div class="chart-subtitle">CyberIndex and period's biggest gainer and loser</div>
         <div id="chart-svg-wrap">
           <svg id="chart-svg" preserveAspectRatio="none"></svg>
           <div id="chart-tip"></div>
@@ -392,13 +406,60 @@
       });
     }
 
+    // ── Live date range preview ───────────────────────────────────────────────
+    // NYSE holidays (approximate — covers most cases without a full calendar lib)
+    const NYSE_HOLIDAYS_2025_2026 = new Set([
+      '2025-01-01','2025-01-20','2025-02-17','2025-04-18','2025-05-26',
+      '2025-06-19','2025-07-04','2025-09-01','2025-11-27','2025-12-25',
+      '2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25',
+      '2026-06-19','2026-07-03','2026-09-07','2026-11-26','2026-12-25',
+    ]);
+
+    function isWeekday(d) { const day = d.getDay(); return day !== 0 && day !== 6; }
+    function toYMD(d) { return d.toISOString().slice(0, 10); }
+    function isTrading(d) { return isWeekday(d) && !NYSE_HOLIDAYS_2025_2026.has(toYMD(d)); }
+
+    function getPastTradingDays(n) {
+      const days = [];
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      // If today is a trading day, include it; otherwise start from yesterday
+      while (days.length < n) {
+        if (isTrading(d)) days.unshift(new Date(d));
+        d.setDate(d.getDate() - 1);
+      }
+      return days;
+    }
+
+    function fmtDate(d) {
+      return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    }
+
+    function updatePreview() {
+      const n = parseInt(document.getElementById('n-days').value, 10);
+      if (!n || n < 1) { document.getElementById('preview-range').textContent = ''; return; }
+      const days = getPastTradingDays(n);
+      if (days.length < 1) return;
+      const start = fmtDate(days[0]);
+      const end   = fmtDate(days[days.length - 1]);
+      document.getElementById('preview-range').textContent = `${start} – ${end}`;
+    }
+
+    document.getElementById('n-days').addEventListener('input', updatePreview);
+    updatePreview(); // show on page load
+
     // ── Pull data ─────────────────────────────────────────────────────────────
     pullBtn.addEventListener('click', async () => {
       pullBtn.disabled = true;
       hideError();
       showSpinner();
       try {
-        const resp = await fetch('/run', { method: 'POST' });
+        const nDays = parseInt(document.getElementById('n-days').value, 10) || 5;
+        const resp = await fetch('/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ n_days: nDays }),
+        });
         const data = await resp.json();
         if (data.status === 'ok') {
           runDateEl.textContent = data.run_date;

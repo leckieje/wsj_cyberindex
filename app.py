@@ -4,7 +4,7 @@ import traceback
 from datetime import date
 
 import lseg.data as ld
-from flask import Flask, Response, jsonify, render_template
+from flask import Flask, Response, jsonify, render_template, request
 
 import data_pull
 
@@ -42,16 +42,23 @@ def index():
     return render_template("index.html")
 
 
+def _fmt_date(d: date) -> str:
+    return d.strftime("%B %-d, %Y")
+
+
 @app.route("/run", methods=["POST"])
 def run():
+    body   = request.get_json(silent=True) or {}
+    n_days = max(1, min(int(body.get("n_days", 5)), 252))
+
     with _cache_lock:
         try:
-            time_changes, top_20_out = data_pull.run_data_pull()
+            time_changes, top_20_out, past, today = data_pull.run_data_pull(n_days=n_days)
         except RuntimeError as exc:
             # One reconnect attempt in case the LSEG session timed out
             try:
                 _open_lseg_session()
-                time_changes, top_20_out = data_pull.run_data_pull()
+                time_changes, top_20_out, past, today = data_pull.run_data_pull(n_days=n_days)
             except Exception as retry_exc:
                 traceback.print_exc()
                 return jsonify({"status": "error", "message": str(retry_exc)}), 500
@@ -59,7 +66,7 @@ def run():
             traceback.print_exc()
             return jsonify({"status": "error", "message": f"Unexpected error: {exc}"}), 500
 
-        run_date = str(date.today())
+        run_date = str(today)
         _result_cache["time_changes"] = time_changes
         _result_cache["top_20_out"]   = top_20_out
         _result_cache["run_date"]     = run_date
@@ -83,10 +90,11 @@ def run():
         }
 
         return jsonify({
-            "status":     "ok",
-            "table_html": table_html,
-            "run_date":   run_date,
-            "chart_data": chart_data,
+            "status":       "ok",
+            "table_html":   table_html,
+            "run_date":     run_date,
+            "date_range":   f"{_fmt_date(past)} \u2013 {_fmt_date(today)}",
+            "chart_data":   chart_data,
         })
 
 
