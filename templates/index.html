@@ -3,162 +3,314 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WSJ CyberIndex</title>
+  <title>WSJ Pro CyberIndex</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
-      font-family: "Georgia", "Times New Roman", serif;
-      background: #fff; color: #1a1a2e; min-height: 100vh; padding: 2rem;
+    :root {
+      --bg:         #F8F9FA;
+      --surface:    #FFFFFF;
+      --surface-2:  #F1F3F5;
+      --border:     #DEE2E6;
+      --accent:     #2563EB;
+      --accent-bg:  #EFF6FF;
+      --text:       #111827;
+      --text-2:     #6B7280;
+      --green:      #16A34A;
+      --red:        #DC2626;
+      --radius:     8px;
+      --shadow:     0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:  0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.04);
+      --font:       -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     }
-    .container { max-width: 1375px; margin: 0 auto; }
 
-    /* ── Page header ── */
-    header { margin-bottom: 2rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 1rem; }
-    header h1 { font-size: 1.5rem; font-weight: 700; color: #0d1b2a; font-family: sans-serif; }
-    header p  { color: #5a6a7a; margin-top: 0.25rem; font-size: 0.9rem; font-family: sans-serif; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; }
 
-    /* ── Controls ── */
-    .controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-    #pull-btn {
-      display: inline-flex; align-items: center; gap: 0.5rem;
-      background: #1a56db; color: #fff; border: none; border-radius: 4px;
-      padding: 0.55rem 1.2rem; font-size: 0.9rem; font-weight: 600;
-      font-family: sans-serif; cursor: pointer; transition: background 0.15s;
+    /* ── App header ── */
+    .app-header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow); position: sticky; top: 0; z-index: 100;
+      height: 56px; display: flex; align-items: center;
+      padding: 0 24px; gap: 32px;
     }
-    #pull-btn:hover:not(:disabled) { background: #1648c0; }
-    #pull-btn:disabled { background: #93acd3; cursor: not-allowed; }
-    .days-label {
-      font-size: 0.875rem; color: #4b5563; font-family: sans-serif;
-      display: flex; align-items: center; gap: 0.4rem;
+    .app-logo {
+      font-size: 16px; font-weight: 700; letter-spacing: -0.3px;
+      color: var(--text); white-space: nowrap; text-decoration: none;
     }
+    .app-logo span { color: var(--accent); }
+    .header-sub {
+      font-size: 12px; color: var(--text-2); font-weight: 400;
+    }
+
+    /* ── Main content ── */
+    .main { max-width: 1440px; margin: 0 auto; padding: 24px; }
+
+    /* ── Controls card ── */
+    .controls-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      padding: 20px 24px; margin-bottom: 24px;
+      display: flex; align-items: flex-start; gap: 32px; flex-wrap: wrap;
+    }
+    .controls-group { display: flex; flex-direction: column; gap: 8px; }
+    .controls-group-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.6px; color: var(--text-2); margin-bottom: 2px;
+    }
+
+    /* Mode rows */
+    .mode-row {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--text);
+    }
+    .mode-radio {
+      appearance: none; -webkit-appearance: none;
+      width: 14px; height: 14px; border: 2px solid var(--border); border-radius: 50%;
+      cursor: pointer; flex-shrink: 0; transition: border-color 0.1s, background 0.1s;
+    }
+    .mode-radio:checked { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px #fff; }
+    .mode-row.inactive { color: var(--text-2); }
+    .mode-row.inactive #n-days { opacity: 0.4; pointer-events: none; }
+    .mode-row.inactive .date-picker-input { opacity: 0.5; }
+    .mode-row.inactive .date-range-label { color: var(--text-2); }
+
+    .or-divider {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--text-2); padding-left: 22px;
+    }
+    #preview-range {
+      font-size: 12px; color: var(--text-2); padding-left: 22px;
+    }
+
     #n-days {
-      width: 52px; padding: 0.3rem 0.4rem; border: 1px solid #d1d5db;
-      border-radius: 4px; font-size: 0.875rem; text-align: center;
+      width: 52px; padding: 5px 6px; border: 1px solid var(--border);
+      border-radius: 6px; font-size: 13px; font-family: var(--font);
+      text-align: center; background: var(--surface); color: var(--text);
+    }
+    #n-days:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+
+    .date-range-label {
+      font-size: 13px; color: var(--text);
+      display: flex; align-items: center; gap: 6px;
     }
 
+    /* ── Custom date picker ── */
+    .date-picker-wrap { position: relative; display: inline-block; }
+    .date-picker-input {
+      padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 13px; font-family: var(--font); background: var(--surface);
+      cursor: pointer; min-width: 98px; color: var(--text);
+      transition: border-color 0.1s;
+    }
+    .date-picker-input:hover { border-color: #9ca3af; }
+    .date-picker-input.placeholder { color: var(--text-2); }
+    .cal-popup {
+      display: none; position: absolute; top: calc(100% + 6px); left: 0;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: var(--shadow-md); z-index: 200;
+      padding: 12px; font-family: var(--font); min-width: 224px;
+    }
+    .cal-popup.open { display: block; }
+    .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .cal-header span { font-size: 13px; font-weight: 600; color: var(--text); }
+    .cal-nav {
+      background: none; border: none; cursor: pointer; font-size: 14px;
+      color: var(--text-2); padding: 2px 8px; border-radius: 6px; line-height: 1;
+    }
+    .cal-nav:hover { background: var(--surface-2); color: var(--text); }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .cal-dow { font-size: 10px; font-weight: 600; color: var(--text-2); text-align: center; padding: 3px 0; text-transform: uppercase; letter-spacing: 0.3px; }
+    .cal-day { font-size: 12px; text-align: center; padding: 5px 2px; border-radius: 6px; cursor: pointer; color: var(--text); transition: background 0.1s; }
+    .cal-day:hover:not(.cal-empty):not(.cal-non-trading):not(.cal-weekend) { background: var(--accent-bg); color: var(--accent); }
+    .cal-day.cal-empty { visibility: hidden; }
+    .cal-day.cal-non-trading { color: var(--border); cursor: default; }
+    .cal-day.cal-weekend     { color: var(--border); cursor: default; }
+    .cal-day.cal-selected    { background: var(--accent); color: #fff !important; font-weight: 600; }
+    .cal-day.cal-in-range    { background: var(--accent-bg); color: var(--accent); }
+    .cal-day.cal-today       { font-weight: 700; }
+
+    /* ── Primary button ── */
+    #pull-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--accent); color: #fff;
+      border: 1px solid var(--accent); border-radius: 6px;
+      padding: 6px 16px; font-size: 13px; font-weight: 500;
+      font-family: var(--font); cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+      align-self: flex-end;
+    }
+    #pull-btn:hover:not(:disabled) { background: #1d4ed8; border-color: #1d4ed8; }
+    #pull-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* ── Spinner & error ── */
     #spinner {
-      display: none; margin-top: 1.25rem; align-items: center;
-      gap: 0.75rem; color: #3d5a80; font-size: 0.9rem; font-family: sans-serif;
+      display: none; align-items: center; gap: 10px;
+      color: var(--text-2); font-size: 13px; margin-bottom: 16px;
     }
     .spin-ring {
-      width: 20px; height: 20px; border: 2px solid #c3d3ea;
-      border-top-color: #1a56db; border-radius: 50%;
+      width: 18px; height: 18px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
       animation: spin 0.75s linear infinite; flex-shrink: 0;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
     #error-banner {
-      display: none; margin-top: 1.25rem; background: #fde8e8;
-      border-left: 4px solid #e02424; color: #771d1d;
-      padding: 0.75rem 1rem; border-radius: 4px; font-size: 0.875rem; font-family: sans-serif;
+      display: none; background: #FEF2F2; border: 1px solid #FECACA;
+      border-left: 3px solid var(--red); color: #991B1B;
+      padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px;
     }
 
-    #results-section { display: none; margin-top: 2rem; }
+    /* ── Results section ── */
+    #results-section { display: none; }
 
-    /* ── Download links ── */
-    .section-bar {
-      display: flex; align-items: baseline; justify-content: space-between;
-      flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem;
+    /* ── Chart card ── */
+    .chart-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      padding: 20px; margin-bottom: 20px;
     }
-    .section-bar h2 { font-size: 1rem; font-weight: 700; font-family: sans-serif; color: #0d1b2a; }
-    .run-date { font-size: 0.8rem; color: #6b7280; font-family: sans-serif; }
-
-    .download-links { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.75rem; }
-    .download-links a {
-      display: inline-flex; align-items: center; gap: 0.3rem;
-      background: #f9fafb; border: 1px solid #d1d5db; color: #374151;
-      border-radius: 4px; padding: 0.35rem 0.8rem; font-size: 0.8rem;
-      font-family: sans-serif; font-weight: 500; text-decoration: none;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .download-links a:hover { background: #f3f4f6; border-color: #9ca3af; }
-
-    /* ── Chart ── */
-    .chart-section { margin-bottom: 2.5rem; }
-
-    .chart-title {
-      font-size: 1.15rem; font-weight: 700; color: #0d1b2a;
-      font-family: sans-serif; margin-bottom: 0.2rem;
+    .chart-card-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--text-2); margin-bottom: 4px;
     }
     .chart-subtitle {
-      font-size: 1rem; color: #4b5563; font-family: sans-serif;
-      margin-bottom: 0.6rem;
+      font-size: 13px; color: var(--text-2); margin-bottom: 16px;
     }
-
     #chart-svg-wrap {
-      position: relative; width: 100%;
-      padding-bottom: 45%;   /* ~2.2:1 wide aspect ratio */
-      height: 0;
-      border-top: 1px solid #d1d5db;
+      position: relative; width: 100%; padding-bottom: 42%; height: 0;
+      border-top: 1px solid var(--border);
     }
-    #chart-svg {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    }
+    #chart-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
     #chart-tip {
       display: none; position: absolute; pointer-events: none;
-      background: rgba(15,23,42,0.9); color: #fff;
-      border-radius: 4px; padding: 6px 10px; font-size: 11px;
-      font-family: sans-serif; line-height: 1.6;
-      white-space: nowrap; z-index: 10;
+      background: rgba(17,24,39,0.93); color: #fff;
+      border-radius: 6px; padding: 8px 12px; font-size: 12px;
+      font-family: var(--font); line-height: 1.6; white-space: nowrap; z-index: 10;
     }
     .chart-source {
-      font-size: 0.75rem; color: #9ca3af; font-family: sans-serif;
-      margin-top: 0.4rem;
+      font-size: 11px; color: var(--text-2); margin-top: 8px;
     }
 
-    /* ── Table ── */
-    .table-wrapper {
-      overflow-x: auto; background: #fff; border-radius: 6px;
-      border: 1px solid #e5e7eb;
+    /* ── Table card ── */
+    .table-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+      overflow: hidden;
     }
+    .table-card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+    }
+    .table-card-title {
+      font-size: 14px; font-weight: 600; color: var(--text);
+    }
+    .table-card-meta {
+      font-size: 12px; color: var(--text-2);
+    }
+    .download-links { display: flex; gap: 8px; flex-wrap: wrap; }
+    .download-links a {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: transparent; border: 1px solid var(--border); color: var(--text-2);
+      border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 500;
+      font-family: var(--font); text-decoration: none;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .download-links a:hover { background: var(--surface-2); color: var(--text); border-color: #9ca3af; }
+
+    .table-wrap { overflow-x: auto; }
     #table-container table {
-      width: 100%; border-collapse: collapse; font-size: 0.825rem;
-      font-family: sans-serif;
+      width: 100%; border-collapse: collapse; font-size: 13px; font-family: var(--font);
     }
-    #table-container table thead tr { background: #f9fafb; }
-    #table-container table th {
-      padding: 0.6rem 0.85rem; text-align: left; font-weight: 600;
-      color: #374151; border-bottom: 1px solid #e5e7eb; white-space: nowrap;
-      cursor: pointer; user-select: none;
+    #table-container table thead th {
+      background: var(--surface-2); padding: 10px 12px;
+      text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--text-2); border-bottom: 1px solid var(--border);
+      white-space: nowrap; cursor: pointer; user-select: none;
     }
-    #table-container table th:hover { background: #f3f4f6; }
-    #table-container table th.sort-asc::after  { content: ' ▲'; font-size: 0.65rem; color: #6b7280; }
-    #table-container table th.sort-desc::after { content: ' ▼'; font-size: 0.65rem; color: #6b7280; }
+    #table-container table thead th:hover { background: #E9ECEF; }
+    #table-container table th.sort-asc::after  { content: ' ▲'; font-size: 9px; }
+    #table-container table th.sort-desc::after { content: ' ▼'; font-size: 9px; }
     #table-container table td {
-      padding: 0.5rem 0.85rem; border-bottom: 1px solid #f3f4f6; white-space: nowrap; color: #1f2937;
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      white-space: nowrap; color: var(--text); vertical-align: middle;
     }
     #table-container table tbody tr:last-child td { border-bottom: none; }
-    #table-container table tbody tr:hover { background: #f9fafb; }
+    #table-container table tbody tr:hover { background: var(--accent-bg); }
+
+    #table-container table tbody tr.cyber-index-row td { color: #16a34a; font-weight: 600; }
+    #table-container table tbody tr.cyber-index-row:hover { background: #F0FDF4; }
+
+    #table-container table tbody tr[data-company] { cursor: pointer; }
+    tr.active-company-row > td { background: var(--accent-bg); }
+    .company-chart-row td { padding: 0; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+    .company-chart-wrap { position: relative; width: 100%; padding-bottom: 20%; height: 0; }
+    .company-chart-wrap svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    .company-chart-tip {
+      display: none; position: absolute; pointer-events: none;
+      background: rgba(17,24,39,0.93); color: #fff;
+      border-radius: 6px; padding: 8px 12px; font-size: 12px;
+      font-family: var(--font); line-height: 1.6; white-space: nowrap; z-index: 10;
+    }
+
+    @media (max-width: 768px) {
+      .app-header { padding: 0 16px; gap: 16px; }
+      .main { padding: 16px; }
+      .controls-card { gap: 20px; padding: 16px; }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>WSJ CyberIndex</h1>
-      <p>Top 20 cybersecurity companies by market cap</p>
-    </header>
 
-    <div class="controls">
-      <button id="pull-btn">Get Data</button>
-      <label class="days-label">
-        Last <input id="n-days" type="number" value="5" min="1" max="252"> trading days
-      </label>
+  <header class="app-header">
+    <a class="app-logo" href="#">WSJ Pro <span>CyberIndex</span></a>
+    <span class="header-sub">Top 20 cybersecurity companies by market cap</span>
+  </header>
+
+  <main class="main">
+
+    <!-- Controls -->
+    <div class="controls-card">
+      <div class="controls-group">
+        <div class="controls-group-label">Time Period</div>
+        <div class="mode-row" id="mode-row-ndays">
+          <input type="radio" class="mode-radio" name="period-mode" id="mode-ndays" value="ndays" checked>
+          <label for="mode-ndays" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            Last <input id="n-days" type="number" value="5" min="1" max="252"> trading days
+          </label>
+        </div>
+        <div id="preview-range"></div>
+        <div class="or-divider">or</div>
+        <div class="mode-row inactive" id="mode-row-range">
+          <input type="radio" class="mode-radio" name="period-mode" id="mode-range" value="range">
+          <span class="date-range-label">
+            From
+            <div class="date-picker-wrap" id="wrap-start">
+              <div class="date-picker-input placeholder" id="display-start">Select date</div>
+              <div class="cal-popup" id="cal-start"></div>
+            </div>
+            to
+            <div class="date-picker-wrap" id="wrap-end">
+              <div class="date-picker-input placeholder" id="display-end">Select date</div>
+              <div class="cal-popup" id="cal-end"></div>
+            </div>
+          </span>
+        </div>
+      </div>
+      <button id="pull-btn">&#9654; Get Data</button>
     </div>
-    <div id="preview-range" style="margin-top:0.5rem; font-size:0.8rem; color:#6b7280; font-family:sans-serif;"></div>
 
     <div id="spinner">
       <div class="spin-ring"></div>
       <span>Fetching data from LSEG &mdash; this typically takes 30&ndash;60 seconds&hellip;</span>
     </div>
-
     <div id="error-banner"></div>
 
     <section id="results-section">
 
       <!-- Chart -->
-      <div class="chart-section">
-        <div class="chart-subtitle">CyberIndex and period's biggest gainer and loser</div>
+      <div class="chart-card">
+        <div class="chart-card-label">Performance Chart</div>
+        <div class="chart-subtitle">CyberIndex and period's biggest gainer and loser <span id="chart-date-range"></span></div>
         <div id="chart-svg-wrap">
           <svg id="chart-svg" preserveAspectRatio="none"></svg>
           <div id="chart-tip"></div>
@@ -167,20 +319,24 @@
       </div>
 
       <!-- Table -->
-      <div class="section-bar">
-        <h2>Top 20 Cyber Companies</h2>
-        <span class="run-date">Run date: <strong id="run-date"></strong></span>
-      </div>
-      <div class="download-links">
-        <a href="/download/charting">&#8659; Charting Data CSV</a>
-        <a href="/download/table">&#8659; Table CSV</a>
-      </div>
-      <div class="table-wrapper">
-        <div id="table-container"></div>
+      <div class="table-card">
+        <div class="table-card-header">
+          <div>
+            <div class="table-card-title">Top 20 Cyber Companies</div>
+            <div class="table-card-meta">Run date: <strong id="run-date"></strong></div>
+          </div>
+          <div class="download-links">
+            <a href="/download/charting">&#8659; Charting Data</a>
+            <a href="/download/table">&#8659; Table Data</a>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <div id="table-container"></div>
+        </div>
       </div>
 
     </section>
-  </div>
+  </main>
 
   <script>
     const pullBtn        = document.getElementById('pull-btn');
@@ -279,19 +435,26 @@
         }));
       }
 
-      // Day boundary labels at bottom (no vertical lines)
-      const dayBounds = [];
+      // Day boundary labels — centre each label over its day's data span,
+      // skipping any label whose midpoint falls too close to the previous one.
+      const dayStarts = [0];
       for (let i = 1; i < n; i++) {
-        if (labels[i].slice(0, 10) !== labels[i-1].slice(0, 10)) dayBounds.push(i);
+        if (labels[i].slice(0, 10) !== labels[i - 1].slice(0, 10)) dayStarts.push(i);
       }
-      dayBounds.forEach(i => {
-        // Parse "MM/DD/YYYY" from the formatted label
-        const parts = labels[i].slice(0, 10).split('/');  // MM/DD/YYYY
-        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        const monthName = months[parseInt(parts[0], 10) - 1];
-        const day = parseInt(parts[1], 10);
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const MIN_LABEL_SEP = 60; // minimum SVG-coord gap between label centres
+      let lastLabelX = -Infinity;
+      dayStarts.forEach((startIdx, di) => {
+        const endIdx = di + 1 < dayStarts.length ? dayStarts[di + 1] - 1 : n - 1;
+        const midIdx = Math.round((startIdx + endIdx) / 2);
+        const cx = xS(midIdx);
+        if (cx - lastLabelX < MIN_LABEL_SEP) return; // too close — skip
+        lastLabelX = cx;
+        const parts  = labels[startIdx].slice(0, 10).split('-');
+        const monthName = months[parseInt(parts[1], 10) - 1];
+        const day = parseInt(parts[2], 10);
         const lbl = document.createElementNS(SVG_NS, 'text');
-        lbl.setAttribute('x', xS(i));
+        lbl.setAttribute('x', cx);
         lbl.setAttribute('y', H - PAD.bottom + 20);
         lbl.setAttribute('text-anchor', 'middle');
         lbl.setAttribute('font-size', '13');
@@ -387,26 +550,255 @@
 
       headers.forEach((th, col) => {
         th.addEventListener('click', () => {
+          // Close any open company dropdown before re-sorting
+          document.querySelector('.company-chart-row')?.remove();
+          if (activeCompanyRow) { activeCompanyRow.classList.remove('active-company-row'); activeCompanyRow = null; }
+
           sortAsc = (sortCol === col) ? !sortAsc : true;
           sortCol = col;
           headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
           th.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
           const tbody = table.querySelector('tbody');
-          Array.from(tbody.querySelectorAll('tr'))
+
+          // Detach pinned CyberIndex row before sorting; exclude dropdown rows
+          const allRows = Array.from(tbody.querySelectorAll('tr'))
+            .filter(r => !r.classList.contains('company-chart-row'));
+          const pinnedRow = allRows[0]?.classList.contains('cyber-index-row') ? allRows.shift() : null;
+
+          allRows
             .sort((a, b) => {
-              const av = a.cells[col].textContent.trim();
-              const bv = b.cells[col].textContent.trim();
+              const av = a.cells[col]?.textContent.trim() ?? '';
+              const bv = b.cells[col]?.textContent.trim() ?? '';
               const an = parseFloat(av.replace(/[$,%]/g, '').replace(/,/g, ''));
               const bn = parseFloat(bv.replace(/[$,%]/g, '').replace(/,/g, ''));
               const cmp = isNaN(an) || isNaN(bn) ? av.localeCompare(bv) : an - bn;
               return sortAsc ? cmp : -cmp;
             })
             .forEach(r => tbody.appendChild(r));
+
+          if (pinnedRow) tbody.insertBefore(pinnedRow, tbody.firstChild);
         });
       });
     }
 
-    // ── Live date range preview ───────────────────────────────────────────────
+    // ── CyberIndex row styling ────────────────────────────────────────────────
+    function styleIndexRow() {
+      const tbody = document.querySelector('#table-container tbody');
+      if (!tbody) return;
+      const firstRow = tbody.querySelector('tr:first-child');
+      if (!firstRow) return;
+      const cells = firstRow.querySelectorAll('td');
+      // Company is now col 0 (Instrument column was dropped)
+      if (cells.length > 0 && cells[0].textContent.trim() === 'CyberIndex') {
+        firstRow.classList.add('cyber-index-row');
+      }
+    }
+
+    // ── Red Period Change for negative values ─────────────────────────────────
+    function colorPeriodChange() {
+      const table = document.querySelector('#table-container table');
+      if (!table) return;
+      // Find the Period Change column index from headers
+      const headers = Array.from(table.querySelectorAll('thead th'));
+      const colIdx  = headers.findIndex(th => th.textContent.trim() === 'Period Change');
+      if (colIdx < 0) return;
+      table.querySelectorAll('tbody tr').forEach(row => {
+        const cell = row.cells[colIdx];
+        if (!cell) return;
+        const val = parseFloat(cell.textContent.replace('%', ''));
+        if (!isNaN(val) && val < 0) cell.style.color = '#e02424';
+      });
+    }
+
+    // ── Per-company data-company attributes ───────────────────────────────────
+    function addCompanyDataAttrs(allSeries) {
+      const names = Object.keys(allSeries);
+      const tbody = document.querySelector('#table-container tbody');
+      if (!tbody) return;
+      Array.from(tbody.querySelectorAll('tr')).forEach(row => {
+        if (row.classList.contains('cyber-index-row')) return;
+        const cell = row.cells[0];  // Company is col 0 (Instrument dropped)
+        if (!cell) return;
+        const text = cell.textContent.trim();
+        const match = names.find(n => n === text);
+        if (match) row.dataset.company = match;
+      });
+    }
+
+    // ── Per-company mini chart ────────────────────────────────────────────────
+    function renderCompanyChart(wrapEl, tipEl, companyName, companyValues, labels, cyberValues) {
+      const CW = 1000, CH = 220;
+      const PAD = { top: 15, right: 120, bottom: 35, left: 48 };
+      const plotW = CW - PAD.left - PAD.right;
+      const plotH = CH - PAD.top - PAD.bottom;
+
+      const svgEl = wrapEl.querySelector('svg');
+      svgEl.setAttribute('viewBox', `0 0 ${CW} ${CH}`);
+      svgEl.innerHTML = '';
+
+      const ns = 'http://www.w3.org/2000/svg';
+      function el(tag, attrs) {
+        const e = document.createElementNS(ns, tag);
+        Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+        return e;
+      }
+
+      const allVals = [...companyValues, ...cyberValues].filter(v => v != null);
+      if (allVals.length === 0) return;
+      let lo = Math.min(...allVals), hi = Math.max(...allVals);
+      if (lo === hi) { lo -= 0.01; hi += 0.01; }
+      const pad = (hi - lo) * 0.08;
+      lo -= pad; hi += pad;
+
+      // Nice tick step
+      const rawStep = (hi - lo) / 5;
+      const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(rawStep))));
+      const step = Math.ceil(rawStep / mag) * mag;
+      const tickMin = Math.ceil(lo / step) * step;
+      const ticks = [];
+      for (let t = tickMin; t <= hi + step * 0.01; t = +(t + step).toFixed(10)) ticks.push(t);
+
+      const xS = i => PAD.left + (i / (labels.length - 1)) * plotW;
+      const yS = v => PAD.top + (1 - (v - lo) / (hi - lo)) * plotH;
+
+      // Grid lines
+      ticks.forEach((t, ti) => {
+        const y = yS(t);
+        svgEl.appendChild(el('line', { x1: PAD.left, y1: y, x2: PAD.left + plotW, y2: y,
+          stroke: '#e5e7eb', 'stroke-width': 0.6 }));
+        const lbl = el('text', { x: PAD.left - 4, y: y + 4, 'text-anchor': 'end',
+          'font-size': 10, fill: '#9ca3af', 'font-family': 'sans-serif' });
+        lbl.textContent = (t * 100).toFixed(1) + (ti === ticks.length - 1 ? '%' : '');
+        svgEl.appendChild(lbl);
+      });
+
+      // Zero line
+      if (lo < 0 && hi > 0) {
+        const y0 = yS(0);
+        svgEl.appendChild(el('line', { x1: PAD.left, y1: y0, x2: PAD.left + plotW, y2: y0,
+          stroke: '#6b7280', 'stroke-width': 1 }));
+      }
+
+      // Day boundary labels — centred over each day, with overlap suppression
+      const cDayStarts = [0];
+      for (let i = 1; i < labels.length; i++) {
+        if (labels[i].slice(0, 10) !== labels[i - 1].slice(0, 10)) cDayStarts.push(i);
+      }
+      const cMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      let cLastLabelX = -Infinity;
+      const C_MIN_SEP = 50;
+      cDayStarts.forEach((startIdx, di) => {
+        const endIdx = di + 1 < cDayStarts.length ? cDayStarts[di + 1] - 1 : labels.length - 1;
+        const midIdx = Math.round((startIdx + endIdx) / 2);
+        const cx = xS(midIdx);
+        if (cx - cLastLabelX < C_MIN_SEP) return;
+        cLastLabelX = cx;
+        const parts  = labels[startIdx].slice(0, 10).split('-');
+        const monthName = cMonths[parseInt(parts[1], 10) - 1];
+        const dayNum = parseInt(parts[2], 10);
+        const tEl = el('text', { x: cx, y: CH - 4, 'text-anchor': 'middle',
+          'font-size': 9, fill: '#9ca3af', 'font-family': 'sans-serif' });
+        tEl.textContent = `${monthName} ${dayNum}`;
+        svgEl.appendChild(tEl);
+      });
+
+      // Draw series: benchmark (grey) first, then company on top
+      const finalVal = companyValues[companyValues.length - 1] ?? 0;
+      const companyColor = finalVal >= 0 ? '#1d5c6e' : '#e02424';
+      const series = [
+        { values: cyberValues,   color: '#d1d5db', name: 'CyberIndex' },
+        { values: companyValues, color: companyColor, name: companyName },
+      ];
+      series.forEach(({ values, color, name }) => {
+        const pts = values.map((v, i) => `${xS(i)},${yS(v)}`).join(' ');
+        svgEl.appendChild(el('polyline', { points: pts, fill: 'none',
+          stroke: color, 'stroke-width': 1.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+        const lastX = xS(values.length - 1);
+        const lastY = yS(values[values.length - 1]);
+        const lbl = el('text', { x: lastX + 5, y: lastY + 4, 'font-size': 10,
+          fill: color, 'font-family': 'sans-serif', 'font-weight': '600' });
+        lbl.textContent = name;
+        svgEl.appendChild(lbl);
+      });
+
+      // Crosshair + tooltip
+      const overlay = el('rect', { x: PAD.left, y: PAD.top, width: plotW, height: plotH,
+        fill: 'transparent', style: 'cursor:crosshair' });
+      const crosshair = el('line', { x1: 0, y1: PAD.top, x2: 0, y2: PAD.top + plotH,
+        stroke: '#9ca3af', 'stroke-width': 1, 'stroke-dasharray': '3,3', display: 'none' });
+      svgEl.appendChild(crosshair);
+      svgEl.appendChild(overlay);
+
+      const fmtPct = v => (v == null ? 'n/a' : (v * 100).toFixed(2) + '%');
+      overlay.addEventListener('mousemove', e => {
+        const rect = svgEl.getBoundingClientRect();
+        const svgW = rect.width, svgH = rect.height;
+        const mx = (e.clientX - rect.left) / svgW * CW;
+        const idx = Math.max(0, Math.min(labels.length - 1,
+          Math.round((mx - PAD.left) / plotW * (labels.length - 1))));
+        const cx = xS(idx);
+        crosshair.setAttribute('x1', cx); crosshair.setAttribute('x2', cx);
+        crosshair.style.display = '';
+        tipEl.innerHTML =
+          `<strong>${labels[idx]}</strong><br>` +
+          `<span style="color:${companyColor}">${companyName}: ${fmtPct(companyValues[idx])}</span><br>` +
+          `<span style="color:#9ca3af">CyberIndex: ${fmtPct(cyberValues[idx])}</span>`;
+        tipEl.style.display = 'block';
+        const tipW = tipEl.offsetWidth, tipH = tipEl.offsetHeight;
+        const pxCx = (cx / CW) * rect.width;
+        const tipLeft = pxCx + 12 + tipW > rect.width ? pxCx - tipW - 8 : pxCx + 12;
+        tipEl.style.left = tipLeft + 'px';
+        tipEl.style.top  = Math.max(0, (e.clientY - rect.top) - tipH / 2) + 'px';
+      });
+      overlay.addEventListener('mouseleave', () => {
+        crosshair.style.display = 'none';
+        tipEl.style.display = 'none';
+      });
+    }
+
+    // ── Clickable row → company chart dropdown ────────────────────────────────
+    let activeCompanyRow = null;
+
+    function attachRowClickHandlers(chartData) {
+      const tbody = document.querySelector('#table-container tbody');
+      if (!tbody) return;
+      tbody.addEventListener('click', e => {
+        const clicked = e.target.closest('tr');
+        if (!clicked || !clicked.dataset.company) return;
+        if (clicked.classList.contains('company-chart-row')) return;
+        const company = clicked.dataset.company;
+
+        // Close existing dropdown
+        document.querySelector('.company-chart-row')?.remove();
+        const wasActive = activeCompanyRow === clicked;
+        activeCompanyRow?.classList.remove('active-company-row');
+        activeCompanyRow = null;
+        if (wasActive) return;
+
+        // Build dropdown row
+        const newRow = document.createElement('tr');
+        newRow.classList.add('company-chart-row');
+        const td = document.createElement('td');
+        td.colSpan = clicked.cells.length;
+        const wrap = document.createElement('div');
+        wrap.classList.add('company-chart-wrap');
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        const tip = document.createElement('div');
+        tip.classList.add('company-chart-tip');
+        wrap.append(svg, tip);
+        td.appendChild(wrap);
+        newRow.appendChild(td);
+        clicked.insertAdjacentElement('afterend', newRow);
+        clicked.classList.add('active-company-row');
+        activeCompanyRow = clicked;
+
+        renderCompanyChart(wrap, tip, company,
+          chartData.all_series[company], chartData.labels, chartData.cyber_index);
+      });
+    }
+
+    // ── Custom date pickers ───────────────────────────────────────────────────
     // NYSE holidays (approximate — covers most cases without a full calendar lib)
     const NYSE_HOLIDAYS_2025_2026 = new Set([
       '2025-01-01','2025-01-20','2025-02-17','2025-04-18','2025-05-26',
@@ -416,8 +808,130 @@
     ]);
 
     function isWeekday(d) { const day = d.getDay(); return day !== 0 && day !== 6; }
-    function toYMD(d) { return d.toISOString().slice(0, 10); }
+    function toYMD(d) {
+      // Use local date components to avoid UTC-offset shifting
+      const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${day}`;
+    }
     function isTrading(d) { return isWeekday(d) && !NYSE_HOLIDAYS_2025_2026.has(toYMD(d)); }
+
+    // ── Calendar picker implementation ────────────────────────────────────────
+    const _pickerState = { start: null, end: null };      // selected YYYY-MM-DD strings
+    const _calViewMonth = { start: null, end: null };     // currently displayed month
+
+    function pickerValue(which) { return _pickerState[which] || ''; }
+
+    function _buildCal(which) {
+      const popup = document.getElementById(`cal-${which}`);
+      const vm    = _calViewMonth[which];
+      const year  = vm.getFullYear(), month = vm.getMonth();
+      const todayStr = toYMD(new Date());
+
+      const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+      const monthNames = ['January','February','March','April','May','June',
+                          'July','August','September','October','November','December'];
+
+      popup.innerHTML = '';
+
+      // Header
+      const hdr = document.createElement('div');
+      hdr.className = 'cal-header';
+      const prevBtn = document.createElement('button');
+      prevBtn.className = 'cal-nav'; prevBtn.textContent = '‹';
+      prevBtn.onclick = e => { e.stopPropagation(); _calViewMonth[which] = new Date(year, month - 1, 1); _buildCal(which); };
+      const nextBtn = document.createElement('button');
+      nextBtn.className = 'cal-nav'; nextBtn.textContent = '›';
+      nextBtn.onclick = e => { e.stopPropagation(); _calViewMonth[which] = new Date(year, month + 1, 1); _buildCal(which); };
+      const title = document.createElement('span');
+      title.textContent = `${monthNames[month]} ${year}`;
+      hdr.append(prevBtn, title, nextBtn);
+      popup.appendChild(hdr);
+
+      // Grid
+      const grid = document.createElement('div');
+      grid.className = 'cal-grid';
+      DAYS.forEach(d => { const dh = document.createElement('div'); dh.className = 'cal-dow'; dh.textContent = d; grid.appendChild(dh); });
+
+      const firstDay = new Date(year, month, 1).getDay();
+      for (let i = 0; i < firstDay; i++) {
+        const empty = document.createElement('div'); empty.className = 'cal-day cal-empty'; grid.appendChild(empty);
+      }
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'cal-day';
+        cell.textContent = d;
+        const dateObj = new Date(year, month, d);
+        const ymd = toYMD(dateObj);
+        const weekend = !isWeekday(dateObj);
+        const holiday = !weekend && NYSE_HOLIDAYS_2025_2026.has(ymd);
+
+        if (weekend || holiday) cell.classList.add(weekend ? 'cal-weekend' : 'cal-non-trading');
+        if (ymd === todayStr) cell.classList.add('cal-today');
+        if (ymd === _pickerState.start || ymd === _pickerState.end) cell.classList.add('cal-selected');
+        else if (_pickerState.start && _pickerState.end && ymd > _pickerState.start && ymd < _pickerState.end)
+          cell.classList.add('cal-in-range');
+
+        if (!weekend && !holiday) {
+          cell.onclick = e => {
+            e.stopPropagation();
+            _pickerState[which] = ymd;
+            const disp = document.getElementById(`display-${which}`);
+            const [y2, m2, d2] = ymd.split('-');
+            disp.textContent = `${parseInt(m2)}/${parseInt(d2)}/${y2}`;
+            disp.classList.remove('placeholder');
+            document.getElementById(`cal-${which}`).classList.remove('open');
+            // Rebuild both cals so range highlight updates
+            _buildCal('start'); _buildCal('end');
+          };
+        }
+        grid.appendChild(cell);
+      }
+      popup.appendChild(grid);
+    }
+
+    function _initPicker(which) {
+      const now = new Date();
+      _calViewMonth[which] = new Date(now.getFullYear(), now.getMonth(), 1);
+      _buildCal(which);
+
+      const display = document.getElementById(`display-${which}`);
+      display.addEventListener('click', e => {
+        e.stopPropagation();
+        // Switch to range mode if not already active
+        document.getElementById('mode-range').checked = true;
+        applyModeStyles();
+        // Close the other picker
+        const other = which === 'start' ? 'end' : 'start';
+        document.getElementById(`cal-${other}`).classList.remove('open');
+        document.getElementById(`cal-${which}`).classList.toggle('open');
+      });
+    }
+
+    _initPicker('start');
+    _initPicker('end');
+
+    // Close pickers on outside click
+    document.addEventListener('click', () => {
+      document.getElementById('cal-start').classList.remove('open');
+      document.getElementById('cal-end').classList.remove('open');
+    });
+
+    // ── Mode switching (ndays vs range) ───────────────────────────────────────
+    function activeMode() {
+      return document.getElementById('mode-ndays').checked ? 'ndays' : 'range';
+    }
+    function applyModeStyles() {
+      const mode = activeMode();
+      document.getElementById('mode-row-ndays').classList.toggle('inactive', mode !== 'ndays');
+      document.getElementById('mode-row-range').classList.toggle('inactive', mode !== 'range');
+      document.getElementById('preview-range').style.display = mode === 'ndays' ? '' : 'none';
+    }
+    document.getElementById('mode-ndays').addEventListener('change', applyModeStyles);
+    document.getElementById('mode-range').addEventListener('change', applyModeStyles);
+    // (mode switching on picker click is handled inside _initPicker)
+
+    // ── Live date range preview ───────────────────────────────────────────────
 
     function getPastTradingDays(n) {
       const days = [];
@@ -454,17 +968,29 @@
       hideError();
       showSpinner();
       try {
-        const nDays = parseInt(document.getElementById('n-days').value, 10) || 5;
+        const nDays     = parseInt(document.getElementById('n-days').value, 10) || 5;
+        const startDate = pickerValue('start');
+        const endDate   = pickerValue('end');
+        const useRange  = activeMode() === 'range' && startDate && endDate;
+        const payload   = useRange
+          ? { start_date: startDate, end_date: endDate }
+          : { n_days: nDays };
         const resp = await fetch('/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ n_days: nDays }),
+          body: JSON.stringify(payload),
         });
         const data = await resp.json();
         if (data.status === 'ok') {
           runDateEl.textContent = data.run_date;
+          document.getElementById('chart-date-range').textContent = `(${data.date_range})`;
           tableContainer.innerHTML = data.table_html;
+          activeCompanyRow = null;
+          styleIndexRow();
+          colorPeriodChange();
+          addCompanyDataAttrs(data.chart_data.all_series);
           makeSortable();
+          attachRowClickHandlers(data.chart_data);
           renderChart(data.chart_data);
           showResults();
         } else {

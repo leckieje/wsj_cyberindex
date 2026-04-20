@@ -124,24 +124,21 @@ def _get_avg_price(price_df: pd.DataFrame, shares: dict) -> pd.DataFrame:
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-def run_data_pull(n_days: int = 5, end_date: date = None) -> tuple:
-    """
-    Execute the full CyberIndex pipeline.
-
-    Args:
-        n_days:   Number of NYSE trading days to look back (default 5).
-        end_date: End date for the range (default today).
-
-    Returns:
-        (time_changes, top_20_out, past, today) — DataFrames plus the
-        resolved start and end dates.
-
-    Raises:
-        RuntimeError on any failure, with a human-readable message.
-    """
+def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
     try:
-        today = end_date or date.today()
-        past  = _get_trading_days(n_days, today)[0].date()
+        nyse = mcal.get_calendar('NYSE')
+        if start_date and end_date:
+            # Custom date range: use all NYSE trading days between the two dates
+            s = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+            e = date.fromisoformat(end_date)   if isinstance(end_date,   str) else end_date
+            trading = nyse.valid_days(start_date=str(s), end_date=str(e))
+            if len(trading) == 0:
+                raise RuntimeError("No trading days found in the selected range.")
+            past  = trading[0].date()
+            today = trading[-1].date()
+        else:
+            today = (date.fromisoformat(end_date) if isinstance(end_date, str) else end_date) or date.today()
+            past  = _get_trading_days(n_days, today)[0].date()
 
         # ── 1. Get today's snapshot for the full universe ─────────────────────
         top = ld.get_data(
@@ -154,7 +151,9 @@ def run_data_pull(n_days: int = 5, end_date: date = None) -> tuple:
         top_20  = ordered.head(20)
         instruments = list(top_20['Instrument'])
 
-        # ── 2. Historical prices (5 trading days up to yesterday) ─────────────
+        actual_today = date.today()
+
+        # ── 2. Historical prices up to (but not including) the end date ────────
         hist = ld.get_history(
             universe=instruments,
             fields=['TRDPRC_1'],
@@ -165,13 +164,23 @@ def run_data_pull(n_days: int = 5, end_date: date = None) -> tuple:
         hist = hist.reset_index()
         hist.rename(columns={'Timestamp': 'date'}, inplace=True)
 
-        # ── 3. Intraday prices (today) ────────────────────────────────────────
-        intra = ld.get_history(
-            universe=instruments,
-            fields=['TRDPRC_1'],
-            interval='10min',
-            start=str(today),
-        )
+        # ── 3. Intraday prices for the end date ───────────────────────────────
+        # If the end date is today fetch live intraday; otherwise fetch that day's history
+        if today == actual_today:
+            intra = ld.get_history(
+                universe=instruments,
+                fields=['TRDPRC_1'],
+                interval='10min',
+                start=str(today),
+            )
+        else:
+            intra = ld.get_history(
+                universe=instruments,
+                fields=['TRDPRC_1'],
+                interval='10min',
+                start=str(today),
+                end=f"{today} 23:59:59",
+            )
         intra = intra.reset_index()
         intra.rename(columns={'Timestamp': 'date'}, inplace=True)
 
@@ -201,6 +210,7 @@ def run_data_pull(n_days: int = 5, end_date: date = None) -> tuple:
         # ── 6. CyberIndex (market-cap-weighted average price) ─────────────────
         weight_avg = _get_avg_price(concatted, shares)
         concatted['CyberIndex'] = weight_avg['CyberIndex']
+        cyber_index_close = float(weight_avg['CyberIndex'].iloc[-1])
 
         # ── 7. % changes from week start ──────────────────────────────────────
         changes = _get_changes(concatted)
@@ -215,7 +225,7 @@ def run_data_pull(n_days: int = 5, end_date: date = None) -> tuple:
             else (c[1] if isinstance(c, tuple) else c)
             for c in changes.columns
         ]
-        changes['Date'] = pd.to_datetime(changes['Date']).apply(_format_to_excel_ap)
+        changes['Date'] = pd.to_datetime(changes['Date'])
 
         # Weekly change per instrument (keyed by RIC, before renaming columns)
         wkly_change = changes.set_index('Date').iloc[-1]  # index is RIC codes here
@@ -265,7 +275,7 @@ def run_data_pull(n_days: int = 5, end_date: date = None) -> tuple:
         )
         top_20_out.index = range(1, len(top_20_out) + 1)
 
-        return time_changes, top_20_out, past, today
+        return time_changes, top_20_out, past, today, cyber_index_close
 
     except Exception as exc:
         raise RuntimeError(f"Data pull failed: {exc}") from exc

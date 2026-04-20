@@ -5,3 +5,4 @@ numpy>=1.26
 pandas-market-calendars>=4.4
 pytz>=2024.1
 gunicorn>=22.0
+openpyxl>=3.1
