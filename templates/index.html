@@ -301,7 +301,7 @@
 
     <div id="spinner">
       <div class="spin-ring"></div>
-      <span>Fetching data from LSEG &mdash; this typically takes 30&ndash;60 seconds&hellip;</span>
+      <span id="spinner-text">Fetching data from LSEG&hellip;</span>
     </div>
     <div id="error-banner"></div>
 
@@ -323,7 +323,6 @@
         <div class="table-card-header">
           <div>
             <div class="table-card-title">Top 20 Cyber Companies</div>
-            <div class="table-card-meta">Run date: <strong id="run-date"></strong></div>
           </div>
           <div class="download-links">
             <a href="/download/charting">&#8659; Charting Data</a>
@@ -344,7 +343,6 @@
     const errorBanner    = document.getElementById('error-banner');
     const resultsSection = document.getElementById('results-section');
     const tableContainer = document.getElementById('table-container');
-    const runDateEl      = document.getElementById('run-date');
 
     function showSpinner()  { spinner.style.display = 'flex'; }
     function hideSpinner()  { spinner.style.display = 'none'; }
@@ -524,7 +522,7 @@
           const v = s.values[i];
           if (v == null || !isFinite(v)) return;
           const sign = v >= 0 ? '+' : '';
-          lines.push(`<span style="color:${s.color}">${s.name}</span>: <b>${sign}${(v*100).toFixed(2)}%</b>`);
+          lines.push(`<span style="color:#fff"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:4px;vertical-align:middle"></span>${s.name}: <b>${sign}${(v*100).toFixed(2)}%</b></span>`);
         });
         tip.innerHTML = lines.join('<br>');
         tip.style.display = 'block';
@@ -739,10 +737,11 @@
         const cx = xS(idx);
         crosshair.setAttribute('x1', cx); crosshair.setAttribute('x2', cx);
         crosshair.style.display = '';
+        const dot = (c) => `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c};margin-right:4px;vertical-align:middle"></span>`;
         tipEl.innerHTML =
-          `<strong>${labels[idx]}</strong><br>` +
-          `<span style="color:${companyColor}">${companyName}: ${fmtPct(companyValues[idx])}</span><br>` +
-          `<span style="color:#9ca3af">CyberIndex: ${fmtPct(cyberValues[idx])}</span>`;
+          `<strong style="color:#fff">${labels[idx]}</strong><br>` +
+          `<span style="color:#fff">${dot(companyColor)}${companyName}: <b>${fmtPct(companyValues[idx])}</b></span><br>` +
+          `<span style="color:#fff">${dot('#9ca3af')}CyberIndex: <b>${fmtPct(cyberValues[idx])}</b></span>`;
         tipEl.style.display = 'block';
         const tipW = tipEl.offsetWidth, tipH = tipEl.offsetHeight;
         const pxCx = (cx / CW) * rect.width;
@@ -966,12 +965,26 @@
     pullBtn.addEventListener('click', async () => {
       pullBtn.disabled = true;
       hideError();
-      showSpinner();
       try {
         const nDays     = parseInt(document.getElementById('n-days').value, 10) || 5;
         const startDate = pickerValue('start');
         const endDate   = pickerValue('end');
         const useRange  = activeMode() === 'range' && startDate && endDate;
+
+        // Dynamic spinner text based on period size
+        let estDays = nDays;
+        if (useRange && startDate && endDate) {
+          const ms = new Date(endDate) - new Date(startDate);
+          estDays = Math.round(ms / 86400000 * 5 / 7); // rough trading-day estimate
+        }
+        let timeEst;
+        if (estDays <= 10)       timeEst = '30–60 seconds';
+        else if (estDays <= 30)  timeEst = '1–2 minutes';
+        else if (estDays <= 60)  timeEst = '2–4 minutes';
+        else                     timeEst = '4–6 minutes';
+        document.getElementById('spinner-text').textContent =
+          `Fetching data from LSEG \u2014 this may take ${timeEst} for this period\u2026`;
+        showSpinner();
         const payload   = useRange
           ? { start_date: startDate, end_date: endDate }
           : { n_days: nDays };
@@ -982,7 +995,6 @@
         });
         const data = await resp.json();
         if (data.status === 'ok') {
-          runDateEl.textContent = data.run_date;
           document.getElementById('chart-date-range').textContent = `(${data.date_range})`;
           tableContainer.innerHTML = data.table_html;
           activeCompanyRow = null;

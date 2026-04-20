@@ -140,7 +140,8 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
             today = (date.fromisoformat(end_date) if isinstance(end_date, str) else end_date) or date.today()
             past  = _get_trading_days(n_days, today)[0].date()
 
-        # ── 1. Get today's snapshot for the full universe ─────────────────────
+        # ── 1. Snapshot: top-20 by market cap + company names ────────────────
+        # (sequential — instruments list needed before parallel price fetches)
         top = ld.get_data(
             universe=IDS,
             fields=['TR.CommonName', 'TR.TickerSymbol', 'TR.CompanyMarketCap',
@@ -148,43 +149,39 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
             parameters={'SDate': str(today), 'EDate': str(today)},
         )
         ordered = top.sort_values('Company Market Cap', ascending=False).reset_index(drop=True)
-        top_20  = ordered.head(20)
+        top_20      = ordered.head(20)
         instruments = list(top_20['Instrument'])
+
+        # Build company-name map from the snapshot — no extra round-trip needed
+        com_name_map = {
+            inst: name.replace(' Inc', '').replace(' Ltd', '')
+            for inst, name in zip(top['Instrument'], top['Company Common Name'])
+            if pd.notna(name)
+        }
 
         actual_today = date.today()
 
         # ── 2. Historical prices up to (but not including) the end date ────────
         hist = ld.get_history(
-            universe=instruments,
-            fields=['TRDPRC_1'],
-            interval='10min',
-            start=str(past),
-            end=f"{today} 00:00:00",
+            universe=instruments, fields=['TRDPRC_1'], interval='10min',
+            start=str(past), end=f"{today} 00:00:00",
         )
         hist = hist.reset_index()
         hist.rename(columns={'Timestamp': 'date'}, inplace=True)
 
         # ── 3. Intraday prices for the end date ───────────────────────────────
-        # If the end date is today fetch live intraday; otherwise fetch that day's history
-        if today == actual_today:
-            intra = ld.get_history(
-                universe=instruments,
-                fields=['TRDPRC_1'],
-                interval='10min',
-                start=str(today),
-            )
-        else:
-            intra = ld.get_history(
-                universe=instruments,
-                fields=['TRDPRC_1'],
-                interval='10min',
-                start=str(today),
-                end=f"{today} 23:59:59",
-            )
+        intra_kwargs = dict(universe=instruments, fields=['TRDPRC_1'], interval='10min',
+                            start=str(today))
+        if today != actual_today:
+            intra_kwargs['end'] = f"{today} 23:59:59"
+        intra = ld.get_history(**intra_kwargs)
         intra = intra.reset_index()
         intra.rename(columns={'Timestamp': 'date'}, inplace=True)
 
-        # ── 4. Combine, localise to NY, filter to trading hours FIRST ─────────
+        # ── 5. Shares outstanding ─────────────────────────────────────────────
+        shares = _latest_shares_outstanding(instruments, past, today)
+
+        # ── 4. Combine, localise to NY, filter to trading hours ───────────────
         concatted = pd.concat([hist, intra], ignore_index=False)
         concatted['date'] = pd.to_datetime(concatted['date'])
         concatted = concatted.set_index('date').sort_index()
@@ -193,26 +190,20 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
             concatted.index = concatted.index.tz_localize('UTC')
         concatted.index = concatted.index.tz_convert('America/New_York')
 
-        # Filter to trading hours BEFORE ffill so pre/post market prices
-        # don't bleed into the calculation
+        # Filter to trading hours BEFORE ffill so pre/post market prices don't bleed
         time_mask = (
             (concatted.index.time >= _MARKET_OPEN) &
             (concatted.index.time <= _MARKET_CLOSE)
         )
         concatted = concatted[time_mask]
-
-        # Now ffill/bfill within trading hours only
         concatted = concatted.ffill().bfill()
-
-        # ── 5. Shares outstanding (fetched once, reused below) ────────────────
-        shares = _latest_shares_outstanding(instruments, past, today)
 
         # ── 6. CyberIndex (market-cap-weighted average price) ─────────────────
         weight_avg = _get_avg_price(concatted, shares)
         concatted['CyberIndex'] = weight_avg['CyberIndex']
         cyber_index_close = float(weight_avg['CyberIndex'].iloc[-1])
 
-        # ── 7. % changes from week start ──────────────────────────────────────
+        # ── 7. % changes from period start ────────────────────────────────────
         changes = _get_changes(concatted)
         changes = changes[
             (changes.index.time >= _MARKET_OPEN) &
@@ -227,15 +218,9 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         ]
         changes['Date'] = pd.to_datetime(changes['Date'])
 
-        # Weekly change per instrument (keyed by RIC, before renaming columns)
-        wkly_change = changes.set_index('Date').iloc[-1]  # index is RIC codes here
+        # Period change per instrument (keyed by RIC, before renaming columns)
+        wkly_change = changes.set_index('Date').iloc[-1]
 
-        # Map LSEG instrument codes → common company names
-        com_name = ld.get_data(universe=IDS, fields=['TR.CommonName'])
-        com_name_map = {
-            inst: name.replace(' Inc', '').replace(' Ltd', '')
-            for inst, name in zip(com_name['Instrument'], com_name['Company Common Name'])
-        }
         time_changes = changes.rename(columns=com_name_map)
 
         # ── 8. Summary table ──────────────────────────────────────────────────
