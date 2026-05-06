@@ -1,0 +1,13 @@
+.env
+*.db
+.DS_Store
+__pycache__/
+.git/
+.claude/
+google-function-auth/
+claude.md
+sidebar.md
+ui-reference.md
+*.csv
+CLAUDE.md
+tasks/

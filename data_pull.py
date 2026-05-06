@@ -1,3 +1,5 @@
+import re
+
 import lseg.data as ld
 import pandas as pd
 import numpy as np
@@ -82,6 +84,19 @@ def _format_to_excel_ap(dt: datetime) -> str:
     return f"{base} {ap}"
 
 
+def _short_exchange(ex_lst) -> dict:
+    ex_map = {}
+    for ex in ex_lst:
+        if ex not in ex_map:
+            if 'nasdaq' in str(ex).lower():
+                ex_map[ex] = 'Nasdaq'
+            elif 'new york stock exchange' in str(ex).lower():
+                ex_map[ex] = 'NYSE'
+            else:
+                ex_map[ex] = ex
+    return ex_map
+
+
 # ── LSEG data helpers ─────────────────────────────────────────────────────────
 
 def _latest_shares_outstanding(ids: list, start: date, end: date) -> dict:
@@ -145,16 +160,19 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         top = ld.get_data(
             universe=IDS,
             fields=['TR.CommonName', 'TR.TickerSymbol', 'TR.CompanyMarketCap',
-                    'TR.PriceClose', 'TR.PriceDate'],
+                    'TR.PriceClose', 'TR.PriceDate', 'TR.ExchangeName'],
             parameters={'SDate': str(today), 'EDate': str(today)},
         )
+        ex_map = _short_exchange(top['Exchange Name'])
+        top['Exchange Name'] = top['Exchange Name'].map(ex_map)
         ordered = top.sort_values('Company Market Cap', ascending=False).reset_index(drop=True)
         top_20      = ordered.head(20)
         instruments = list(top_20['Instrument'])
 
         # Build company-name map from the snapshot — no extra round-trip needed
+        _name_strip_re = re.compile(r' Software Technologies| Technologies| Systems| Holdings| Ltd| Inc', re.IGNORECASE)
         com_name_map = {
-            inst: name.replace(' Inc', '').replace(' Ltd', '')
+            inst: _name_strip_re.sub('', name).strip()
             for inst, name in zip(top['Instrument'], top['Company Common Name'])
             if pd.notna(name)
         }
@@ -167,7 +185,12 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
             start=str(past), end=f"{today} 00:00:00",
         )
         hist = hist.reset_index()
-        hist.rename(columns={'Timestamp': 'date'}, inplace=True)
+        if isinstance(hist.columns, pd.MultiIndex):
+            hist.columns = [c[1] if c[1] else c[0] for c in hist.columns]
+        hist.columns = [
+            'date' if str(c).lower() in ('timestamp', 'date', 'index') else c
+            for c in hist.columns
+        ]
 
         # ── 3. Intraday prices for the end date ───────────────────────────────
         intra_kwargs = dict(universe=instruments, fields=['TRDPRC_1'], interval='10min',
@@ -176,9 +199,14 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
             intra_kwargs['end'] = f"{today} 23:59:59"
         intra = ld.get_history(**intra_kwargs)
         intra = intra.reset_index()
-        intra.rename(columns={'Timestamp': 'date'}, inplace=True)
+        if isinstance(intra.columns, pd.MultiIndex):
+            intra.columns = [c[1] if c[1] else c[0] for c in intra.columns]
+        intra.columns = [
+            'date' if str(c).lower() in ('timestamp', 'date', 'index') else c
+            for c in intra.columns
+        ]
 
-        # ── 5. Shares outstanding ─────────────────────────────────────────────
+        # ── 4. Shares outstanding ─────────────────────────────────────────────
         shares = _latest_shares_outstanding(instruments, past, today)
 
         # ── 4. Combine, localise to NY, filter to trading hours ───────────────
@@ -196,6 +224,11 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
             (concatted.index.time <= _MARKET_CLOSE)
         )
         concatted = concatted[time_mask]
+        if concatted.empty:
+            raise RuntimeError(
+                f"No trading-hours data found for {past} to {today}. "
+                "The market may not have opened yet today."
+            )
         concatted = concatted.ffill().bfill()
 
         # ── 6. CyberIndex (market-cap-weighted average price) ─────────────────
@@ -234,7 +267,7 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         last_prices.columns = ['Instrument', 'Price Close']
 
         out_table = top_20[['Instrument', 'Company Common Name', 'Ticker Symbol',
-                             'Company Market Cap']].copy()
+                             'Exchange Name', 'Company Market Cap']].copy()
         out_table['Date'] = str(today)
         out_table = pd.merge(out_table, last_prices, on='Instrument', how='left')
 
@@ -243,6 +276,7 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         col_map = {
             'Company Common Name': 'Company',
             'Ticker Symbol':       'Ticker',
+            'Exchange Name':       'Exchange',
             'Date':                'Date',
             'Price Close':         'Price Close',
             'Period Change':       'Period Change',
@@ -254,7 +288,7 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         # Formatting for web display is applied in app.py.
         top_20_out['Company']       = (
             top_20_out['Company']
-            .str.replace(r' ltd| inc', '', case=False, regex=True)
+            .str.replace(r' ltd| inc| Software Technologies| Technologies| Systems| Holdings', '', case=False, regex=True)
             .str.strip()
         )
         top_20_out.index = range(1, len(top_20_out) + 1)

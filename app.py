@@ -15,7 +15,7 @@ from flask import Flask, Response, jsonify, render_template, request
 import data_pull
 
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates', static_folder='static')
 
 # ── LSEG session ──────────────────────────────────────────────────────────────
 # Opened once at import time so gunicorn workers have a live session immediately.
@@ -25,14 +25,20 @@ app = Flask(__name__)
 # -w 1 is REQUIRED — the LSEG session is process-level state and must not be
 # forked across multiple workers.
 
+_lseg_ready = False
+
 def _open_lseg_session():
+    global _lseg_ready
     try:
         ld.close_session()
     except Exception:
         pass
     ld.open_session("platform.ldp")
+    _lseg_ready = True
 
-_open_lseg_session()
+def _ensure_lseg():
+    if not _lseg_ready:
+        _open_lseg_session()
 
 # ── In-memory result cache ────────────────────────────────────────────────────
 # Holds the two DataFrames from the last successful pull.
@@ -65,7 +71,8 @@ def run():
     end_date   = body.get("end_date")   or None   # "YYYY-MM-DD" or None
     n_days     = max(1, min(int(body.get("n_days", 5)), 252))
 
-    # Run LSEG data pull
+    _ensure_lseg()
+
     with _cache_lock:
         try:
             time_changes, top_20_out, past, today, cyber_index_close = data_pull.run_data_pull(
@@ -91,11 +98,12 @@ def run():
 
         # Build CyberIndex summary row and prepend it to the table
         # Drop Instrument column — it's an internal RIC code not useful for display
-        display_cols = ["Company", "Ticker", "Date", "Price Close", "Period Change", "Market Cap"]
+        display_cols = ["Company", "Ticker", "Exchange", "Date", "Price Close", "Period Change", "Market Cap"]
         cyber_period_change = time_changes["CyberIndex"].iloc[-1]
         ci_row = pd.DataFrame([{
             "Company":       "CyberIndex",
             "Ticker":        "",
+            "Exchange":      "",
             "Date":          str(today),
             "Price Close":   f"${cyber_index_close:,.2f}",
             "Period Change": f"{cyber_period_change * 100:.2f}%",

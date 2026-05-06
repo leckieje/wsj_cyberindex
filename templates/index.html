@@ -41,6 +41,9 @@
     .header-sub {
       font-size: 12px; color: var(--text-2); font-weight: 400;
     }
+    .header-credit {
+      margin-left: auto; font-size: 10px; color: #9ca3af;
+    }
 
     /* ── Main content ── */
     .main { max-width: 1440px; margin: 0 auto; padding: 24px; }
@@ -121,10 +124,13 @@
     .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
     .cal-dow { font-size: 10px; font-weight: 600; color: var(--text-2); text-align: center; padding: 3px 0; text-transform: uppercase; letter-spacing: 0.3px; }
     .cal-day { font-size: 12px; text-align: center; padding: 5px 2px; border-radius: 6px; cursor: pointer; color: var(--text); transition: background 0.1s; }
-    .cal-day:hover:not(.cal-empty):not(.cal-non-trading):not(.cal-weekend) { background: var(--accent-bg); color: var(--accent); }
+    .cal-day:hover:not(.cal-empty):not(.cal-non-trading):not(.cal-weekend):not(.cal-future) { background: var(--accent-bg); color: var(--accent); }
     .cal-day.cal-empty { visibility: hidden; }
-    .cal-day.cal-non-trading { color: var(--border); cursor: default; }
+    .cal-day.cal-adjacent { color: #c8ccd0; font-weight: 300; }
+    .cal-day.cal-non-trading { color: var(--border); cursor: default; text-decoration: line-through; }
     .cal-day.cal-weekend     { color: var(--border); cursor: default; }
+    .cal-day.cal-future      { color: var(--border); cursor: default; opacity: 0.5; }
+    .cal-day.cal-future.cal-non-trading { text-decoration: line-through; }
     .cal-day.cal-selected    { background: var(--accent); color: #fff !important; font-weight: 600; }
     .cal-day.cal-in-range    { background: var(--accent-bg); color: var(--accent); }
     .cal-day.cal-today       { font-weight: 700; }
@@ -265,6 +271,7 @@
   <header class="app-header">
     <a class="app-logo" href="#">WSJ Pro <span>CyberIndex</span></a>
     <span class="header-sub">Top 20 cybersecurity companies by market cap</span>
+    <span class="header-credit">WSJ Pro Data</span>
   </header>
 
   <main class="main">
@@ -455,6 +462,7 @@
       gainer: '#1d5c6e',  // dark teal
       loser:  '#5bb8d4',  // light blue
     };
+    const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif";
 
     function mkEl(tag, attrs) {
       const el = document.createElementNS(SVG_NS, tag);
@@ -508,7 +516,7 @@
         lbl.setAttribute('y', y + 4);
         lbl.setAttribute('text-anchor', 'end');
         lbl.setAttribute('font-size', '13');
-        lbl.setAttribute('font-family', 'sans-serif');
+        lbl.setAttribute('font-family', FONT);
         lbl.setAttribute('fill', '#6b7280');
         // Only show % on the top tick
         lbl.textContent = ti === ticks.length - 1 ? `${pct}%` : `${pct}`;
@@ -547,7 +555,7 @@
         lbl.setAttribute('y', H - PAD.bottom + 20);
         lbl.setAttribute('text-anchor', 'middle');
         lbl.setAttribute('font-size', '13');
-        lbl.setAttribute('font-family', 'sans-serif');
+        lbl.setAttribute('font-family', FONT);
         lbl.setAttribute('fill', '#6b7280');
         lbl.textContent = `${monthName} ${day}`;
         svg.appendChild(lbl);
@@ -576,7 +584,7 @@
           lbl.setAttribute('x', lastX + 8);
           lbl.setAttribute('y', lastY + 4);
           lbl.setAttribute('font-size', '12');
-          lbl.setAttribute('font-family', 'sans-serif');
+          lbl.setAttribute('font-family', FONT);
           lbl.setAttribute('fill', s.color);
           lbl.setAttribute('font-weight', '600');
           lbl.textContent = s.name;
@@ -758,7 +766,7 @@
         svgEl.appendChild(el('line', { x1: PAD.left, y1: y, x2: PAD.left + plotW, y2: y,
           stroke: '#e5e7eb', 'stroke-width': 0.6 }));
         const lbl = el('text', { x: PAD.left - 4, y: y + 4, 'text-anchor': 'end',
-          'font-size': 10, fill: '#9ca3af', 'font-family': 'sans-serif' });
+          'font-size': 10, fill: '#9ca3af', 'font-family': FONT });
         lbl.textContent = (t * 100).toFixed(1) + (ti === ticks.length - 1 ? '%' : '');
         svgEl.appendChild(lbl);
       });
@@ -788,7 +796,7 @@
         const monthName = cMonths[parseInt(parts[1], 10) - 1];
         const dayNum = parseInt(parts[2], 10);
         const tEl = el('text', { x: cx, y: CH - 4, 'text-anchor': 'middle',
-          'font-size': 9, fill: '#9ca3af', 'font-family': 'sans-serif' });
+          'font-size': 9, fill: '#9ca3af', 'font-family': FONT });
         tEl.textContent = `${monthName} ${dayNum}`;
         svgEl.appendChild(tEl);
       });
@@ -807,7 +815,7 @@
         const lastX = xS(values.length - 1);
         const lastY = yS(values[values.length - 1]);
         const lbl = el('text', { x: lastX + 5, y: lastY + 4, 'font-size': 10,
-          fill: color, 'font-family': 'sans-serif', 'font-weight': '600' });
+          fill: color, 'font-family': FONT, 'font-weight': '600' });
         lbl.textContent = name;
         svgEl.appendChild(lbl);
       });
@@ -946,26 +954,34 @@
       DAYS.forEach(d => { const dh = document.createElement('div'); dh.className = 'cal-dow'; dh.textContent = d; grid.appendChild(dh); });
 
       const firstDay = new Date(year, month, 1).getDay();
-      for (let i = 0; i < firstDay; i++) {
-        const empty = document.createElement('div'); empty.className = 'cal-day cal-empty'; grid.appendChild(empty);
-      }
       const daysInMonth = new Date(year, month + 1, 0).getDate();
-      for (let d = 1; d <= daysInMonth; d++) {
+      const prevMonthDays = new Date(year, month, 0).getDate();
+      const totalCells = firstDay + daysInMonth;
+      const trailingCells = (7 - (totalCells % 7)) % 7;
+
+      function _makeCell(dateObj, isAdjacent) {
         const cell = document.createElement('div');
         cell.className = 'cal-day';
-        cell.textContent = d;
-        const dateObj = new Date(year, month, d);
+        cell.textContent = dateObj.getDate();
         const ymd = toYMD(dateObj);
         const weekend = !isWeekday(dateObj);
         const holiday = !weekend && NYSE_HOLIDAYS_2025_2026.has(ymd);
+        const isFuture = ymd > todayStr;
 
-        if (weekend || holiday) cell.classList.add(weekend ? 'cal-weekend' : 'cal-non-trading');
+        if (isAdjacent) cell.classList.add('cal-adjacent');
+
+        if (isFuture) {
+          cell.classList.add('cal-future');
+          if (holiday) cell.classList.add('cal-non-trading');
+        } else if (weekend || holiday) {
+          cell.classList.add(weekend ? 'cal-weekend' : 'cal-non-trading');
+        }
         if (ymd === todayStr) cell.classList.add('cal-today');
         if (ymd === _pickerState.start || ymd === _pickerState.end) cell.classList.add('cal-selected');
         else if (_pickerState.start && _pickerState.end && ymd > _pickerState.start && ymd < _pickerState.end)
           cell.classList.add('cal-in-range');
 
-        if (!weekend && !holiday) {
+        if (!weekend && !holiday && !isFuture) {
           cell.onclick = e => {
             e.stopPropagation();
             _pickerState[which] = ymd;
@@ -974,11 +990,24 @@
             disp.textContent = `${parseInt(m2)}/${parseInt(d2)}/${y2}`;
             disp.classList.remove('placeholder');
             document.getElementById(`cal-${which}`).classList.remove('open');
-            // Rebuild both cals so range highlight updates
+            if (isAdjacent) _calViewMonth[which] = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
             _buildCal('start'); _buildCal('end');
           };
         }
-        grid.appendChild(cell);
+        return cell;
+      }
+
+      // Previous month trailing days
+      for (let i = firstDay - 1; i >= 0; i--) {
+        grid.appendChild(_makeCell(new Date(year, month - 1, prevMonthDays - i), true));
+      }
+      // Current month days
+      for (let d = 1; d <= daysInMonth; d++) {
+        grid.appendChild(_makeCell(new Date(year, month, d), false));
+      }
+      // Next month leading days
+      for (let d = 1; d <= trailingCells; d++) {
+        grid.appendChild(_makeCell(new Date(year, month + 1, d), true));
       }
       popup.appendChild(grid);
     }
