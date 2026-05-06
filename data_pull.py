@@ -43,6 +43,8 @@ def _get_trading_days(n: int, end_date: date) -> list:
 # ── Math helpers ──────────────────────────────────────────────────────────────
 
 def _pct_change(val1: float, val2: float) -> float:
+    if pd.isna(val1) or pd.isna(val2) or val1 == 0:
+        return float('nan')
     return (val2 - val1) / val1
 
 
