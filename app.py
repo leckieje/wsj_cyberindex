@@ -1,4 +1,5 @@
 import io
+import math
 import threading
 import traceback
 from datetime import date
@@ -127,15 +128,18 @@ def run():
         loser_name  = final_row.idxmin()
 
         # Pass CyberIndex, gainer, loser, and all company series to the frontend
+        def _clean(lst):
+            return [None if (isinstance(v, float) and math.isnan(v)) else v for v in lst]
+
         chart_data = {
             "labels":            time_changes["Date"].dt.strftime('%Y-%m-%d %H:%M').tolist(),
-            "cyber_index":       time_changes["CyberIndex"].tolist(),
+            "cyber_index":       _clean(time_changes["CyberIndex"].tolist()),
             "gainer_name":       gainer_name,
-            "gainer_values":     time_changes[gainer_name].tolist(),
+            "gainer_values":     _clean(time_changes[gainer_name].tolist()),
             "loser_name":        loser_name,
-            "loser_values":      time_changes[loser_name].tolist(),
+            "loser_values":      _clean(time_changes[loser_name].tolist()),
             "all_series":        {
-                col: [round(v, 6) for v in time_changes[col].tolist()]
+                col: _clean([round(v, 6) if not math.isnan(v) else None for v in time_changes[col].tolist()])
                 for col in stock_cols
             },
         }
