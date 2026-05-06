@@ -6,3 +6,9 @@ pandas-market-calendars>=4.4
 pytz>=2024.1
 gunicorn>=22.0
 openpyxl>=3.1
+anthropic>=0.40
+httpx>=0.27
+python-dotenv>=1.0
+# Local packages:
+# pip install -e ~/Documents/sandbox/factiva_analytics/factiva
+# pip install -e ~/Documents/sandbox/factiva_analytics/factiva_sentiment

@@ -257,6 +257,7 @@
       .main { padding: 16px; }
       .controls-card { gap: 20px; padding: 16px; }
     }
+
   </style>
 </head>
 <body>
@@ -337,6 +338,7 @@
     </section>
   </main>
 
+
   <script>
     const pullBtn        = document.getElementById('pull-btn');
     const spinner        = document.getElementById('spinner');
@@ -350,6 +352,81 @@
     function hideError()    { errorBanner.style.display = 'none'; }
     function showResults()  { resultsSection.style.display = 'block'; }
 
+    // ── Ticker → domain map for favicons ─────────────────────────────────────
+    const TICKER_DOMAIN = {
+      ALLT:  'allegro.com',
+      INTZ:  'intz.com',
+      MITK:  'mitek.com',
+      OSPN:  'onespan.com',
+      CISO:  'ciso.com',
+      CSCO:  'cisco.com',
+      PANW:  'paloaltonetworks.com',
+      CRWD:  'crowdstrike.com',
+      FTNT:  'fortinet.com',
+      ZS:    'zscaler.com',
+      CHKP:  'checkpoint.com',
+      OKTA:  'okta.com',
+      FFIV:  'f5.com',
+      AKAM:  'akamai.com',
+      SAIL:  'sailpoint.com',
+      VRNS:  'varonis.com',
+      QLYS:  'qualys.com',
+      TENB:  'tenable.com',
+      NTCT:  'netscout.com',
+      RDWR:  'radware.com',
+      RPD:   'rapid7.com',
+      TLS:   'telos.com',
+      HUBC:  'hubcyber.com',
+      CYCU:  'cyberark.com',
+      NET:   'cloudflare.com',
+      LDOS:  'leidos.com',
+      RBRK:  'rubrik.com',
+      S:     'sentinelone.com',
+      LUMN:  'lumen.com',
+      ATEN:  'aten.com',
+      CVLT:  'commvault.com',
+    };
+
+    const LOCAL_LOGOS = {
+      PANW: '/static/logos/panw_RGB_Logo_Icon_Positive.png',
+    };
+
+    function faviconUrl(ticker) {
+      if (LOCAL_LOGOS[ticker]) return LOCAL_LOGOS[ticker];
+      const domain = TICKER_DOMAIN[ticker];
+      if (!domain) return null;
+      return `https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://${domain}&size=32`;
+    }
+
+    function addLogosToTable() {
+      const tbody = document.querySelector('#table-container tbody');
+      if (!tbody) return;
+      Array.from(tbody.querySelectorAll('tr')).forEach(row => {
+        const companyCell = row.cells[0];
+        if (!companyCell) return;
+        // Avoid double-inserting
+        if (companyCell.querySelector('img.co-logo')) return;
+
+        let url;
+        if (row.classList.contains('cyber-index-row')) {
+          url = `https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://wsj.com&size=32`;
+        } else {
+          const tickerCell = row.cells[1];
+          if (!tickerCell) return;
+          url = faviconUrl(tickerCell.textContent.trim());
+          if (!url) return;
+        }
+        // Avoid double-inserting
+        if (companyCell.querySelector('img.co-logo')) return;
+        const img = document.createElement('img');
+        img.src = url;
+        img.className = 'co-logo';
+        img.style.cssText = 'width:16px;height:16px;vertical-align:middle;margin-right:6px;border-radius:3px;flex-shrink:0;object-fit:contain';
+        img.onerror = () => { img.style.display = 'none'; };
+        companyCell.insertBefore(img, companyCell.firstChild);
+      });
+    }
+
     // ── SVG chart ─────────────────────────────────────────────────────────────
     const SVG_NS = 'http://www.w3.org/2000/svg';
     // Internal coordinate space — viewBox scales to fill the container
@@ -357,6 +434,20 @@
     const PAD = { top: 20, right: 140, bottom: 40, left: 52 };
     const CW = W - PAD.left - PAD.right;
     const CH = H - PAD.top  - PAD.bottom;
+
+    // Company display name → ticker, built from table after each pull
+    let _companyTicker = {};
+
+    function buildCompanyTickerMap() {
+      _companyTicker = {};
+      const tbody = document.querySelector('#table-container tbody');
+      if (!tbody) return;
+      Array.from(tbody.querySelectorAll('tr')).forEach(row => {
+        const company = row.cells[0]?.textContent.trim();
+        const ticker  = row.cells[1]?.textContent.trim();
+        if (company && ticker) _companyTicker[company] = ticker;
+      });
+    }
 
     // WSJ-style colors: dark teal gainer, green index, light blue loser
     const COLORS = {
@@ -479,7 +570,7 @@
           'stroke-linejoin': 'round', 'stroke-linecap': 'round',
         }));
 
-        // Inline label at end of line
+        // Inline label at end of line — clickable for gainer/loser
         if (lastX !== null) {
           const lbl = document.createElementNS(SVG_NS, 'text');
           lbl.setAttribute('x', lastX + 8);
@@ -537,7 +628,9 @@
         crosshair.style.display = 'none';
         tip.style.display = 'none';
       });
+
     }
+
 
     // ── Sortable table ────────────────────────────────────────────────────────
     function makeSortable() {
@@ -753,6 +846,7 @@
         crosshair.style.display = 'none';
         tipEl.style.display = 'none';
       });
+
     }
 
     // ── Clickable row → company chart dropdown ────────────────────────────────
@@ -1001,10 +1095,13 @@
           styleIndexRow();
           colorPeriodChange();
           addCompanyDataAttrs(data.chart_data.all_series);
+          buildCompanyTickerMap();
+          addLogosToTable();
           makeSortable();
           attachRowClickHandlers(data.chart_data);
           renderChart(data.chart_data);
           showResults();
+
         } else {
           showError('Error: ' + (data.message || 'Unknown error from server.'));
         }

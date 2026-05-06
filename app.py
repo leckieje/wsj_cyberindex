@@ -5,11 +5,15 @@ from datetime import date
 
 import openpyxl
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import lseg.data as ld
 from flask import Flask, Response, jsonify, render_template, request
 
 import data_pull
+
 
 app = Flask(__name__)
 
@@ -22,6 +26,10 @@ app = Flask(__name__)
 # forked across multiple workers.
 
 def _open_lseg_session():
+    try:
+        ld.close_session()
+    except Exception:
+        pass
     ld.open_session("platform.ldp")
 
 _open_lseg_session()
@@ -57,6 +65,7 @@ def run():
     end_date   = body.get("end_date")   or None   # "YYYY-MM-DD" or None
     n_days     = max(1, min(int(body.get("n_days", 5)), 252))
 
+    # Run LSEG data pull
     with _cache_lock:
         try:
             time_changes, top_20_out, past, today, cyber_index_close = data_pull.run_data_pull(
@@ -92,7 +101,14 @@ def run():
             "Period Change": f"{cyber_period_change * 100:.2f}%",
             "Market Cap":    "",
         }])
-        display_table = pd.concat([ci_row, top_20_out[display_cols].reset_index(drop=True)], ignore_index=True)
+        display_df = top_20_out[display_cols].copy().reset_index(drop=True)
+        display_df["Price Close"]   = display_df["Price Close"].apply(
+            lambda v: f"${v:,.2f}" if pd.notna(v) else "")
+        display_df["Period Change"] = display_df["Period Change"].apply(
+            lambda v: f"{v * 100:.2f}%" if pd.notna(v) else "")
+        display_df["Market Cap"]    = display_df["Market Cap"].apply(
+            lambda v: f"${v:,.0f}" if pd.notna(v) else "")
+        display_table = pd.concat([ci_row, display_df], ignore_index=True)
         table_html = display_table.to_html(classes=["data-table"], border=0, index=False)
 
         # Identify biggest gainer and loser by final % change (exclude Date and CyberIndex)
@@ -103,13 +119,13 @@ def run():
 
         # Pass CyberIndex, gainer, loser, and all company series to the frontend
         chart_data = {
-            "labels":        time_changes["Date"].dt.strftime('%Y-%m-%d %H:%M').tolist(),
-            "cyber_index":   time_changes["CyberIndex"].tolist(),
-            "gainer_name":   gainer_name,
-            "gainer_values": time_changes[gainer_name].tolist(),
-            "loser_name":    loser_name,
-            "loser_values":  time_changes[loser_name].tolist(),
-            "all_series":    {
+            "labels":            time_changes["Date"].dt.strftime('%Y-%m-%d %H:%M').tolist(),
+            "cyber_index":       time_changes["CyberIndex"].tolist(),
+            "gainer_name":       gainer_name,
+            "gainer_values":     time_changes[gainer_name].tolist(),
+            "loser_name":        loser_name,
+            "loser_values":      time_changes[loser_name].tolist(),
+            "all_series":        {
                 col: [round(v, 6) for v in time_changes[col].tolist()]
                 for col in stock_cols
             },
@@ -174,6 +190,24 @@ def download_table():
     buf = io.BytesIO()
     df.to_excel(buf, index=False, engine='openpyxl')
     buf.seek(0)
+    wb = openpyxl.load_workbook(buf)
+    ws = wb.active
+    headers = [cell.value for cell in ws[1]]
+    col_idx = {name: i + 1 for i, name in enumerate(headers)}
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        for col_name, fmt in (
+            ("Price Close",   '"$"#,##0.00'),
+            ("Market Cap",    '"$"#,##0'),
+            ("Period Change", '0.00%'),
+        ):
+            if col_name in col_idx:
+                cell = row[col_idx[col_name] - 1]
+                if cell.value is not None:
+                    cell.number_format = fmt
+    buf2 = io.BytesIO()
+    wb.save(buf2)
+    buf2.seek(0)
+    buf = buf2
 
     filename = f"cyberIndex_Table_{run_date.replace('-', '_')}.xlsx"
     return Response(
@@ -181,6 +215,8 @@ def download_table():
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
 
 
 if __name__ == "__main__":

@@ -250,9 +250,8 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         }
         top_20_out = out_table[[k for k in col_map]].copy()
         top_20_out.rename(columns=col_map, inplace=True)
-        top_20_out['Market Cap']    = top_20_out['Market Cap'].apply(_format_currency_round)
-        top_20_out['Period Change'] = top_20_out['Period Change'].apply(_format_percentage)
-        top_20_out['Price Close']   = top_20_out['Price Close'].apply(_format_currency)
+        # Keep Market Cap, Period Change, Price Close as numeric for Excel export.
+        # Formatting for web display is applied in app.py.
         top_20_out['Company']       = (
             top_20_out['Company']
             .str.replace(r' ltd| inc', '', case=False, regex=True)
