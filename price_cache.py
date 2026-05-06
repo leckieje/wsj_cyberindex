@@ -15,10 +15,12 @@ import pandas_market_calendars as mcal
 _BUCKET_NAME = os.environ.get("PRICE_CACHE_BUCKET", "dj-newsroom-stag-shared")
 _CACHE_BASE = os.environ.get("PRICE_CACHE_BASE", "jon_leckie/cyberindex-price-cache")
 _BLOB_PREFIX = f"{_CACHE_BASE}/prices"
+_DAILY_BLOB_PREFIX = f"{_CACHE_BASE}/daily"
 _VERIFY_BLOB = f"{_CACHE_BASE}/verify_state.json"
 _ET = pytz.timezone("America/New_York")
 _MARKET_CLOSE = time(16, 0)
 _TOLERANCE = 0.0001  # 0.01%
+_INTRADAY_BOUNDARY = date(2025, 5, 5)
 
 _gcs_client: Optional[storage.Client] = None
 _bucket: Optional[storage.Bucket] = None
@@ -84,6 +86,39 @@ def _write_cached_day(trading_date: date, instrument: str, df: pd.DataFrame):
         "prices": records,
     }
     blob = bucket.blob(_blob_path(trading_date, instrument))
+    blob.upload_from_string(json.dumps(payload), content_type="application/json")
+
+
+def _daily_blob_path(trading_date: date, instrument: str) -> str:
+    return f"{_DAILY_BLOB_PREFIX}/{trading_date.isoformat()}/{instrument}.json"
+
+
+def _read_daily_cached(trading_date: date, instrument: str, skip_exists=False) -> Optional[pd.DataFrame]:
+    bucket = _get_bucket()
+    blob = bucket.blob(_daily_blob_path(trading_date, instrument))
+    if not skip_exists and not blob.exists():
+        return None
+    try:
+        data = json.loads(blob.download_as_text())
+    except Exception:
+        return None
+    if not data.get("price"):
+        return None
+    price = data["price"]
+    ts = pd.Timestamp(f"{trading_date} 16:00:00", tz="America/New_York").tz_convert("UTC")
+    df = pd.DataFrame([{instrument: price}], index=pd.DatetimeIndex([ts], name="timestamp"))
+    return df
+
+
+def _write_daily_cached(trading_date: date, instrument: str, price: float):
+    bucket = _get_bucket()
+    payload = {
+        "instrument": instrument,
+        "date": trading_date.isoformat(),
+        "interval": "daily",
+        "price": price,
+    }
+    blob = bucket.blob(_daily_blob_path(trading_date, instrument))
     blob.upload_from_string(json.dumps(payload), content_type="application/json")
 
 
@@ -298,7 +333,8 @@ def run_verification():
         pass
 
 
-def get_prices(instruments: list, start: date, end: date, today: date) -> pd.DataFrame:
+def get_prices(instruments: list, start: date, end: date, today: date) -> tuple:
+    """Returns (prices_df, includes_daily)."""
     now_et = datetime.now(_ET)
 
     nyse = mcal.get_calendar("NYSE")
@@ -308,14 +344,106 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> pd.Dat
     settled_days = [d for d in all_days if _is_settled(d, now_et)]
     live_days = [d for d in all_days if not _is_settled(d, now_et)]
 
+    # Split settled into daily (pre-boundary) and intraday (on/after boundary)
+    daily_days = [d for d in settled_days if d < _INTRADAY_BOUNDARY]
+    intraday_days = [d for d in settled_days if d >= _INTRADAY_BOUNDARY]
+    includes_daily = len(daily_days) > 0
+
     all_frames = []
 
-    # --- Settled days: check cache, fetch missing ---
+    # --- Daily days (before intraday boundary): check cache, fetch missing ---
+    if daily_days:
+        daily_missing = {}
+        try:
+            months_needed = sorted(set(f"{d.year}-{d.month:02d}" for d in daily_days))
+            bucket = _get_bucket()
+            daily_cached_set = set()
+
+            def _list_daily_month(ym):
+                prefix = f"{_DAILY_BLOB_PREFIX}/{ym}"
+                return list(bucket.list_blobs(prefix=prefix))
+
+            with ThreadPoolExecutor(max_workers=10) as pool:
+                month_results = pool.map(_list_daily_month, months_needed)
+
+            for blobs in month_results:
+                for b in blobs:
+                    parts = b.name.split("/")
+                    daily_cached_set.add((parts[-2], parts[-1].replace(".json", "")))
+
+            to_read = []
+            for day in daily_days:
+                day_str = day.isoformat()
+                for inst in instruments:
+                    if (day_str, inst) in daily_cached_set:
+                        to_read.append((day, inst))
+                    else:
+                        daily_missing.setdefault(inst, []).append(day)
+
+            if to_read:
+                with ThreadPoolExecutor(max_workers=50) as pool:
+                    results = list(pool.map(
+                        lambda pair: _read_daily_cached(pair[0], pair[1], skip_exists=True), to_read))
+                for i, df in enumerate(results):
+                    if df is not None:
+                        all_frames.append(df)
+                    else:
+                        day, inst = to_read[i]
+                        daily_missing.setdefault(inst, []).append(day)
+        except Exception:
+            daily_missing = {inst: list(daily_days) for inst in instruments}
+
+        if daily_missing:
+            all_missing_days = sorted(set(d for days in daily_missing.values() for d in days))
+            ranges = _contiguous_ranges(all_missing_days)
+
+            for range_start, range_end in ranges:
+                insts_needed = [
+                    inst for inst, days in daily_missing.items()
+                    if any(range_start <= d <= range_end for d in days)
+                ]
+
+                fetched = ld.get_history(
+                    universe=insts_needed,
+                    fields=["TRDPRC_1"],
+                    interval="daily",
+                    start=str(range_start),
+                    end=str(range_end),
+                )
+                fetched = _normalize_lseg_df(fetched)
+
+                # Daily data comes without time — assign 16:00 ET (market close)
+                if fetched.index.tz is None:
+                    new_idx = []
+                    for ts in fetched.index:
+                        d = ts.date() if hasattr(ts, 'date') else pd.Timestamp(ts).date()
+                        new_idx.append(pd.Timestamp(f"{d} 16:00:00", tz="America/New_York"))
+                    fetched.index = pd.DatetimeIndex(new_idx, name="timestamp")
+
+                fetched_utc = fetched.copy()
+                fetched_utc.index = fetched_utc.index.tz_convert("UTC")
+
+                # Cache each day/instrument
+                for inst in insts_needed:
+                    if inst not in fetched_utc.columns:
+                        continue
+                    for day in sorted(d for d in daily_missing[inst] if range_start <= d <= range_end):
+                        close_ts = pd.Timestamp(f"{day} 16:00:00", tz="America/New_York").tz_convert("UTC")
+                        if close_ts in fetched_utc.index:
+                            val = fetched_utc.at[close_ts, inst]
+                            if pd.notna(val):
+                                try:
+                                    _write_daily_cached(day, inst, float(val))
+                                except Exception:
+                                    pass
+
+                all_frames.append(fetched_utc)
+
+    # --- Intraday settled days: check cache, fetch missing ---
     missing = {}
     try:
-        if settled_days:
-            # List blobs scoped to only the months in the date range
-            months_needed = sorted(set(f"{d.year}-{d.month:02d}" for d in settled_days))
+        if intraday_days:
+            months_needed = sorted(set(f"{d.year}-{d.month:02d}" for d in intraday_days))
             bucket = _get_bucket()
             cached_set = set()
 
@@ -331,9 +459,8 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> pd.Dat
                     parts = b.name.split("/")
                     cached_set.add((parts[-2], parts[-1].replace(".json", "")))
 
-            # Identify what needs fetching vs reading from cache
             to_read = []
-            for day in settled_days:
+            for day in intraday_days:
                 day_str = day.isoformat()
                 for inst in instruments:
                     if (day_str, inst) in cached_set:
@@ -341,7 +468,6 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> pd.Dat
                     else:
                         missing.setdefault(inst, []).append(day)
 
-            # Parallel read all cached files (skip exists check — already confirmed via listing)
             if to_read:
                 with ThreadPoolExecutor(max_workers=50) as pool:
                     results = list(pool.map(lambda pair: _read_cached_day(pair[0], pair[1], skip_exists=True), to_read))
@@ -353,7 +479,7 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> pd.Dat
                         day, inst = to_read[i]
                         missing.setdefault(inst, []).append(day)
     except Exception:
-        missing = {inst: list(settled_days) for inst in instruments}
+        missing = {inst: list(intraday_days) for inst in instruments}
 
     if missing:
         all_missing_days = sorted(set(d for days in missing.values() for d in days))
@@ -377,7 +503,6 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> pd.Dat
             if fetched.index.tz is None:
                 fetched.index = fetched.index.tz_localize("UTC")
 
-            # Convert to ET for day-splitting and caching
             fetched_et = fetched.copy()
             fetched_et.index = fetched_et.index.tz_convert("America/New_York")
 
@@ -394,7 +519,6 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> pd.Dat
                         except Exception:
                             pass
 
-            # Append the original UTC data to all_frames
             all_frames.append(fetched)
 
     # --- Live days: always fetch from LSEG ---
@@ -418,9 +542,8 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> pd.Dat
 
     # --- Combine ---
     if not all_frames:
-        return pd.DataFrame()
+        return pd.DataFrame(), includes_daily
 
-    # Normalize all frames to UTC before concat
     normalized = []
     for f in all_frames:
         if f.index.tz is None:
@@ -434,8 +557,8 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> pd.Dat
 
     # Queue next verification for the following request
     try:
-        _queue_next_verification(instruments, settled_days)
+        _queue_next_verification(instruments, intraday_days)
     except Exception:
         pass
 
-    return result
+    return result, includes_daily

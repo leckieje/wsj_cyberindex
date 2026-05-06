@@ -165,6 +165,11 @@
       border-left: 3px solid var(--red); color: #991B1B;
       padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px;
     }
+    #warning-banner {
+      display: none; background: #FFFBEB; border: 1px solid #FDE68A;
+      border-left: 3px solid #F59E0B; color: #92400E;
+      padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px;
+    }
 
     /* ── Results section ── */
     #results-section { display: none; }
@@ -313,6 +318,7 @@
       <span id="spinner-text">Fetching data from LSEG&hellip;</span>
     </div>
     <div id="error-banner"></div>
+    <div id="warning-banner"></div>
 
     <section id="results-section">
 
@@ -351,12 +357,15 @@
     const pullBtn        = document.getElementById('pull-btn');
     const spinner        = document.getElementById('spinner');
     const errorBanner    = document.getElementById('error-banner');
+    const warningBanner  = document.getElementById('warning-banner');
     const resultsSection = document.getElementById('results-section');
     const tableContainer = document.getElementById('table-container');
 
     function showSpinner()  { spinner.style.display = 'flex'; }
     function hideSpinner()  { spinner.style.display = 'none'; }
     function showError(msg) { errorBanner.textContent = msg; errorBanner.style.display = 'block'; }
+    function showWarning(msg) { warningBanner.textContent = msg; warningBanner.style.display = 'block'; }
+    function hideWarning()    { warningBanner.style.display = 'none'; }
     function hideError()    { errorBanner.style.display = 'none'; }
     function showResults()  { resultsSection.style.display = 'block'; }
 
@@ -1146,6 +1155,7 @@
     pullBtn.addEventListener('click', async () => {
       pullBtn.disabled = true;
       hideError();
+      hideWarning();
       try {
         const nDays     = parseInt(document.getElementById('n-days').value, 10) || 5;
         const startDate = pickerValue('start');
@@ -1196,6 +1206,8 @@
           attachRowClickHandlers(data.chart_data);
           renderChart(data.chart_data);
           showResults();
+
+          if (data.warning) showWarning(data.warning);
 
           // Fire-and-forget: run cache verification in the background
           fetch('/verify', { method: 'POST' }).catch(() => {});

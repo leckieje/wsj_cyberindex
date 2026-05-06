@@ -251,7 +251,7 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         }
 
         # ── 2+3. Prices (cached historical + live intraday) ────────────────
-        concatted = get_prices(
+        concatted, includes_daily = get_prices(
             instruments=instruments, start=past, end=today, today=today,
         )
 
@@ -344,7 +344,7 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         )
         top_20_out.index = range(1, len(top_20_out) + 1)
 
-        return time_changes, top_20_out, past, today, cyber_index_close
+        return time_changes, top_20_out, past, today, cyber_index_close, includes_daily
 
     except Exception as exc:
         raise RuntimeError(f"Data pull failed: {exc}") from exc

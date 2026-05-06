@@ -77,13 +77,13 @@ def run():
 
     with _cache_lock:
         try:
-            time_changes, top_20_out, past, today, cyber_index_close = data_pull.run_data_pull(
+            time_changes, top_20_out, past, today, cyber_index_close, includes_daily = data_pull.run_data_pull(
                 n_days=n_days, start_date=start_date, end_date=end_date)
         except RuntimeError as exc:
             # One reconnect attempt in case the LSEG session timed out
             try:
                 _open_lseg_session()
-                time_changes, top_20_out, past, today, cyber_index_close = data_pull.run_data_pull(
+                time_changes, top_20_out, past, today, cyber_index_close, includes_daily = data_pull.run_data_pull(
                     n_days=n_days, start_date=start_date, end_date=end_date)
             except Exception as retry_exc:
                 traceback.print_exc()
@@ -144,13 +144,16 @@ def run():
             },
         }
 
-        return jsonify({
+        resp = {
             "status":       "ok",
             "table_html":   table_html,
             "run_date":     run_date,
             "date_range":   f"{_fmt_date(past)} \u2013 {_fmt_date(today)}",
             "chart_data":   chart_data,
-        })
+        }
+        if includes_daily:
+            resp["warning"] = "Dates before May 5, 2025 use daily close prices only (10-minute intraday data is not available from LSEG beyond 1 year)."
+        return jsonify(resp)
 
 
 @app.route("/verify", methods=["POST"])
