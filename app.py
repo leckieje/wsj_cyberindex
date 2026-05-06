@@ -13,6 +13,7 @@ import lseg.data as ld
 from flask import Flask, Response, jsonify, render_template, request
 
 import data_pull
+from price_cache import run_verification
 
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -146,6 +147,13 @@ def run():
             "date_range":   f"{_fmt_date(past)} \u2013 {_fmt_date(today)}",
             "chart_data":   chart_data,
         })
+
+
+@app.route("/verify", methods=["POST"])
+def verify():
+    _ensure_lseg()
+    run_verification()
+    return jsonify({"status": "ok"})
 
 
 @app.route("/download/charting", methods=["GET"])

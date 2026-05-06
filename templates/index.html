@@ -102,10 +102,11 @@
     .date-picker-input {
       padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
       font-size: 13px; font-family: var(--font); background: var(--surface);
-      cursor: pointer; min-width: 98px; color: var(--text);
-      transition: border-color 0.1s;
+      cursor: pointer; min-width: 98px; width: 98px; color: var(--text);
+      transition: border-color 0.1s; outline: none;
     }
     .date-picker-input:hover { border-color: #9ca3af; }
+    .date-picker-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
     .date-picker-input.placeholder { color: var(--text-2); }
     .cal-popup {
       display: none; position: absolute; top: calc(100% + 6px); left: 0;
@@ -293,12 +294,12 @@
           <span class="date-range-label">
             From
             <div class="date-picker-wrap" id="wrap-start">
-              <div class="date-picker-input placeholder" id="display-start">Select date</div>
+              <input type="text" class="date-picker-input placeholder" id="display-start" placeholder="mm/dd/yyyy" autocomplete="off">
               <div class="cal-popup" id="cal-start"></div>
             </div>
             to
             <div class="date-picker-wrap" id="wrap-end">
-              <div class="date-picker-input placeholder" id="display-end">Select date</div>
+              <input type="text" class="date-picker-input placeholder" id="display-end" placeholder="mm/dd/yyyy" autocomplete="off">
               <div class="cal-popup" id="cal-end"></div>
             </div>
           </span>
@@ -987,7 +988,7 @@
             _pickerState[which] = ymd;
             const disp = document.getElementById(`display-${which}`);
             const [y2, m2, d2] = ymd.split('-');
-            disp.textContent = `${parseInt(m2)}/${parseInt(d2)}/${y2}`;
+            disp.value = `${parseInt(m2)}/${parseInt(d2)}/${y2}`;
             disp.classList.remove('placeholder');
             document.getElementById(`cal-${which}`).classList.remove('open');
             if (isAdjacent) _calViewMonth[which] = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
@@ -1012,6 +1013,36 @@
       popup.appendChild(grid);
     }
 
+    function _parseTypedDate(str) {
+      // Accept mm/dd/yyyy, m/d/yyyy, mm-dd-yyyy, yyyy-mm-dd
+      let m, d, y;
+      const slash = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      const iso = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+      if (slash) { m = parseInt(slash[1]); d = parseInt(slash[2]); y = parseInt(slash[3]); }
+      else if (iso) { y = parseInt(iso[1]); m = parseInt(iso[2]); d = parseInt(iso[3]); }
+      else return null;
+      const dateObj = new Date(y, m - 1, d);
+      if (dateObj.getFullYear() !== y || dateObj.getMonth() !== m - 1 || dateObj.getDate() !== d) return null;
+      if (toYMD(dateObj) > toYMD(new Date())) return null;
+      return dateObj;
+    }
+
+    function _applyTypedDate(which) {
+      const disp = document.getElementById(`display-${which}`);
+      const val = disp.value.trim();
+      if (!val) return;
+      const dateObj = _parseTypedDate(val);
+      if (dateObj) {
+        const ymd = toYMD(dateObj);
+        _pickerState[which] = ymd;
+        const [y2, m2, d2] = ymd.split('-');
+        disp.value = `${parseInt(m2)}/${parseInt(d2)}/${y2}`;
+        disp.classList.remove('placeholder');
+        _calViewMonth[which] = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
+        _buildCal('start'); _buildCal('end');
+      }
+    }
+
     function _initPicker(which) {
       const now = new Date();
       _calViewMonth[which] = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1027,6 +1058,22 @@
         const other = which === 'start' ? 'end' : 'start';
         document.getElementById(`cal-${other}`).classList.remove('open');
         document.getElementById(`cal-${which}`).classList.toggle('open');
+      });
+
+      display.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          _applyTypedDate(which);
+          document.getElementById(`cal-${which}`).classList.remove('open');
+        }
+      });
+
+      display.addEventListener('blur', () => {
+        _applyTypedDate(which);
+      });
+
+      display.addEventListener('input', () => {
+        display.classList.remove('placeholder');
       });
     }
 
@@ -1130,6 +1177,9 @@
           attachRowClickHandlers(data.chart_data);
           renderChart(data.chart_data);
           showResults();
+
+          // Fire-and-forget: run cache verification in the background
+          fetch('/verify', { method: 'POST' }).catch(() => {});
 
         } else {
           showError('Error: ' + (data.message || 'Unknown error from server.'));

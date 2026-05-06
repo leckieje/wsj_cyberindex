@@ -1,3 +1,4 @@
+import json
 import re
 
 import lseg.data as ld
@@ -6,6 +7,8 @@ import numpy as np
 import pandas_market_calendars as mcal
 import pytz
 from datetime import date, time, timedelta, datetime
+
+from price_cache import get_prices, _get_bucket, _is_settled, _ET, _CACHE_BASE
 
 IDS = [
     'ALLT.OQ', 'INTZ.OQ', 'MITK.OQ', 'OSPN.OQ', 'CISO.OQ', 'CSCO.OQ',
@@ -97,6 +100,65 @@ def _short_exchange(ex_lst) -> dict:
     return ex_map
 
 
+# ── GCS cache helpers (snapshot + shares) ────────────────────────────────────
+
+def _get_snapshot_cached(today: date) -> pd.DataFrame | None:
+    try:
+        bucket = _get_bucket()
+        blob = bucket.blob(f"{_CACHE_BASE}/snapshot/{today.isoformat()}.json")
+        if not blob.exists():
+            return None
+        data = json.loads(blob.download_as_text())
+        return pd.DataFrame(data["records"])
+    except Exception:
+        return None
+
+
+def _cache_snapshot(today: date, df: pd.DataFrame):
+    try:
+        bucket = _get_bucket()
+        blob = bucket.blob(f"{_CACHE_BASE}/snapshot/{today.isoformat()}.json")
+        records = df.to_dict(orient="records")
+        for r in records:
+            for k, v in r.items():
+                if pd.isna(v):
+                    r[k] = None
+                elif isinstance(v, (np.integer,)):
+                    r[k] = int(v)
+                elif isinstance(v, (np.floating,)):
+                    r[k] = float(v)
+        blob.upload_from_string(
+            json.dumps({"date": today.isoformat(), "records": records}),
+            content_type="application/json",
+        )
+    except Exception:
+        pass
+
+
+def _get_shares_cached(today: date) -> dict | None:
+    try:
+        bucket = _get_bucket()
+        blob = bucket.blob(f"{_CACHE_BASE}/shares/{today.isoformat()}.json")
+        if not blob.exists():
+            return None
+        data = json.loads(blob.download_as_text())
+        return {k: int(v) for k, v in data["shares"].items()}
+    except Exception:
+        return None
+
+
+def _cache_shares(today: date, shares: dict):
+    try:
+        bucket = _get_bucket()
+        blob = bucket.blob(f"{_CACHE_BASE}/shares/{today.isoformat()}.json")
+        blob.upload_from_string(
+            json.dumps({"date": today.isoformat(), "shares": shares}),
+            content_type="application/json",
+        )
+    except Exception:
+        pass
+
+
 # ── LSEG data helpers ─────────────────────────────────────────────────────────
 
 def _latest_shares_outstanding(ids: list, start: date, end: date) -> dict:
@@ -156,13 +218,22 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
             past  = _get_trading_days(n_days, today)[0].date()
 
         # ── 1. Snapshot: top-20 by market cap + company names ────────────────
-        # (sequential — instruments list needed before parallel price fetches)
-        top = ld.get_data(
-            universe=IDS,
-            fields=['TR.CommonName', 'TR.TickerSymbol', 'TR.CompanyMarketCap',
-                    'TR.PriceClose', 'TR.PriceDate', 'TR.ExchangeName'],
-            parameters={'SDate': str(today), 'EDate': str(today)},
-        )
+        now_et = datetime.now(pytz.timezone("America/New_York"))
+        today_is_settled = _is_settled(today, now_et)
+
+        cached_snapshot = _get_snapshot_cached(today) if today_is_settled else None
+        if cached_snapshot is not None:
+            top = cached_snapshot
+        else:
+            top = ld.get_data(
+                universe=IDS,
+                fields=['TR.CommonName', 'TR.TickerSymbol', 'TR.CompanyMarketCap',
+                        'TR.PriceClose', 'TR.PriceDate', 'TR.ExchangeName'],
+                parameters={'SDate': str(today), 'EDate': str(today)},
+            )
+            if today_is_settled:
+                _cache_snapshot(today, top)
+
         ex_map = _short_exchange(top['Exchange Name'])
         top['Exchange Name'] = top['Exchange Name'].map(ex_map)
         ordered = top.sort_values('Company Market Cap', ascending=False).reset_index(drop=True)
@@ -177,43 +248,21 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
             if pd.notna(name)
         }
 
-        actual_today = date.today()
-
-        # ── 2. Historical prices up to (but not including) the end date ────────
-        hist = ld.get_history(
-            universe=instruments, fields=['TRDPRC_1'], interval='10min',
-            start=str(past), end=f"{today} 00:00:00",
+        # ── 2+3. Prices (cached historical + live intraday) ────────────────
+        concatted = get_prices(
+            instruments=instruments, start=past, end=today, today=today,
         )
-        hist = hist.reset_index()
-        if isinstance(hist.columns, pd.MultiIndex):
-            hist.columns = [c[1] if c[1] else c[0] for c in hist.columns]
-        hist.columns = [
-            'date' if str(c).lower() in ('timestamp', 'date', 'index') else c
-            for c in hist.columns
-        ]
-
-        # ── 3. Intraday prices for the end date ───────────────────────────────
-        intra_kwargs = dict(universe=instruments, fields=['TRDPRC_1'], interval='10min',
-                            start=str(today))
-        if today != actual_today:
-            intra_kwargs['end'] = f"{today} 23:59:59"
-        intra = ld.get_history(**intra_kwargs)
-        intra = intra.reset_index()
-        if isinstance(intra.columns, pd.MultiIndex):
-            intra.columns = [c[1] if c[1] else c[0] for c in intra.columns]
-        intra.columns = [
-            'date' if str(c).lower() in ('timestamp', 'date', 'index') else c
-            for c in intra.columns
-        ]
 
         # ── 4. Shares outstanding ─────────────────────────────────────────────
-        shares = _latest_shares_outstanding(instruments, past, today)
+        cached_shares = _get_shares_cached(today) if today_is_settled else None
+        if cached_shares is not None and all(inst in cached_shares for inst in instruments):
+            shares = {inst: cached_shares[inst] for inst in instruments}
+        else:
+            shares = _latest_shares_outstanding(instruments, past, today)
+            if today_is_settled:
+                _cache_shares(today, shares)
 
-        # ── 4. Combine, localise to NY, filter to trading hours ───────────────
-        concatted = pd.concat([hist, intra], ignore_index=False)
-        concatted['date'] = pd.to_datetime(concatted['date'])
-        concatted = concatted.set_index('date').sort_index()
-
+        # ── 5. Localise to NY, filter to trading hours ────────────────────────
         if concatted.index.tz is None:
             concatted.index = concatted.index.tz_localize('UTC')
         concatted.index = concatted.index.tz_convert('America/New_York')
