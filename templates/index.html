@@ -1027,18 +1027,29 @@
       return dateObj;
     }
 
+    function _snapToTradingDay(dateObj, direction) {
+      const limit = 10;
+      let d = new Date(dateObj);
+      for (let i = 0; i < limit; i++) {
+        if (isTrading(d)) return d;
+        d.setDate(d.getDate() + direction);
+      }
+      return dateObj;
+    }
+
     function _applyTypedDate(which) {
       const disp = document.getElementById(`display-${which}`);
       const val = disp.value.trim();
       if (!val) return;
       const dateObj = _parseTypedDate(val);
       if (dateObj) {
-        const ymd = toYMD(dateObj);
+        const snapped = _snapToTradingDay(dateObj, which === 'start' ? 1 : -1);
+        const ymd = toYMD(snapped);
         _pickerState[which] = ymd;
         const [y2, m2, d2] = ymd.split('-');
         disp.value = `${parseInt(m2)}/${parseInt(d2)}/${y2}`;
         disp.classList.remove('placeholder');
-        _calViewMonth[which] = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
+        _calViewMonth[which] = new Date(snapped.getFullYear(), snapped.getMonth(), 1);
         _buildCal('start'); _buildCal('end');
       }
     }
