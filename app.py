@@ -48,10 +48,13 @@ def _ensure_lseg():
 
 _cache_lock = threading.Lock()
 _result_cache: dict = {
-    "time_changes":      None,
-    "top_20_out":        None,
-    "run_date":          None,
-    "cyber_index_close": None,
+    "time_changes":         None,
+    "top_20_out":           None,
+    "run_date":             None,
+    "cyber_index_close":    None,
+    "gainer_name":          None,
+    "loser_name":           None,
+    "cyber_period_change":  None,
 }
 
 
@@ -127,6 +130,10 @@ def run():
         gainer_name = final_row.idxmax()
         loser_name  = final_row.idxmin()
 
+        _result_cache["gainer_name"]         = gainer_name
+        _result_cache["loser_name"]          = loser_name
+        _result_cache["cyber_period_change"] = cyber_period_change
+
         # Pass CyberIndex, gainer, loser, and all company series to the frontend
         def _clean(lst):
             return [None if (isinstance(v, float) and math.isnan(v)) else v for v in lst]
@@ -165,14 +172,23 @@ def verify():
 
 @app.route("/download/charting", methods=["GET"])
 def download_charting():
+    display_only = request.args.get("display_only", "0") == "1"
+
     with _cache_lock:
-        df       = _result_cache["time_changes"]
-        run_date = _result_cache["run_date"]
+        df          = _result_cache["time_changes"]
+        run_date    = _result_cache["run_date"]
+        gainer_name = _result_cache["gainer_name"]
+        loser_name  = _result_cache["loser_name"]
 
     if df is None:
         return "No data available — run a pull first.", 404
 
     df_out = df.copy()
+
+    if display_only and gainer_name and loser_name:
+        keep_cols = [c for c in ["Date", "CyberIndex", gainer_name, loser_name] if c in df_out.columns]
+        df_out = df_out[keep_cols]
+
     # Convert decimal % changes → rounded percentages (e.g. 0.0123 → 1.23)
     for col in df_out.columns:
         if col != 'Date':
@@ -204,14 +220,28 @@ def download_charting():
 @app.route("/download/table", methods=["GET"])
 def download_table():
     with _cache_lock:
-        df       = _result_cache["top_20_out"]
-        run_date = _result_cache["run_date"]
+        df                 = _result_cache["top_20_out"]
+        run_date           = _result_cache["run_date"]
+        cyber_index_close  = _result_cache["cyber_index_close"]
+        cyber_period_change = _result_cache["cyber_period_change"]
 
     if df is None:
         return "No data available — run a pull first.", 404
 
+    df_out = df.copy()
+    ci_row = pd.DataFrame([{
+        "Company":       "CyberIndex",
+        "Ticker":        "",
+        "Exchange":      "",
+        "Date":          run_date,
+        "Price Close":   cyber_index_close,
+        "Period Change": cyber_period_change,
+        "Market Cap":    None,
+    }])
+    df_out = pd.concat([ci_row, df_out], ignore_index=True)
+
     buf = io.BytesIO()
-    df.to_excel(buf, index=False, engine='openpyxl')
+    df_out.to_excel(buf, index=False, engine='openpyxl')
     buf.seek(0)
     wb = openpyxl.load_workbook(buf)
     ws = wb.active
