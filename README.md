@@ -52,6 +52,7 @@ gcloud functions deploy wsj-pro-data-cyberindex \
   --allow-unauthenticated \
   --memory 1Gi \
   --timeout 120s \
+  --min-instances 1 \
   --set-env-vars ACCESS_KEY=<key>,SECRET_KEY=<key>
 ```
 

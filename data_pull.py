@@ -243,7 +243,7 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         instruments = list(top_20['Instrument'])
 
         # Build company-name map from the snapshot — no extra round-trip needed
-        _name_strip_re = re.compile(r' Software Technologies| Technologies| Systems| Holdings| Ltd| Inc', re.IGNORECASE)
+        _name_strip_re = re.compile(r',?\s*(?:Software Technologies|Technologies|Systems|Holdings|Ltd|Inc)\.?', re.IGNORECASE)
         com_name_map = {
             inst: _name_strip_re.sub('', name).strip()
             for inst, name in zip(top['Instrument'], top['Company Common Name'])
@@ -339,7 +339,7 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
         # Formatting for web display is applied in app.py.
         top_20_out['Company']       = (
             top_20_out['Company']
-            .str.replace(r' ltd| inc| Software Technologies| Technologies| Systems| Holdings', '', case=False, regex=True)
+            .str.replace(r',?\s*(?:Software Technologies|Technologies|Systems|Holdings|Ltd|Inc)\.?', '', case=False, regex=True)
             .str.strip()
         )
         top_20_out.index = range(1, len(top_20_out) + 1)
