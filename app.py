@@ -39,7 +39,16 @@ def _open_lseg_session():
     _lseg_ready = True
 
 def _ensure_lseg():
+    global _lseg_ready
     if not _lseg_ready:
+        _open_lseg_session()
+        return
+    # Fast health check: a cheap LSEG call to detect stale sessions
+    try:
+        ld.get_data(universe=["AAPL.OQ"], fields=["TR.PriceClose"])
+    except Exception:
+        print("LSEG health check failed — reconnecting session")
+        _lseg_ready = False
         _open_lseg_session()
 
 # ── In-memory result cache ────────────────────────────────────────────────────
@@ -82,8 +91,8 @@ def run():
         try:
             time_changes, top_20_out, past, today, cyber_index_close, includes_daily = data_pull.run_data_pull(
                 n_days=n_days, start_date=start_date, end_date=end_date)
-        except RuntimeError as exc:
-            # One reconnect attempt in case the LSEG session timed out
+        except Exception as exc:
+            # One reconnect attempt in case the LSEG session went stale
             try:
                 _open_lseg_session()
                 time_changes, top_20_out, past, today, cyber_index_close, includes_daily = data_pull.run_data_pull(
@@ -91,9 +100,6 @@ def run():
             except Exception as retry_exc:
                 traceback.print_exc()
                 return jsonify({"status": "error", "message": str(retry_exc)}), 500
-        except Exception as exc:
-            traceback.print_exc()
-            return jsonify({"status": "error", "message": f"Unexpected error: {exc}"}), 500
 
         run_date = str(today)
         _result_cache["time_changes"]      = time_changes

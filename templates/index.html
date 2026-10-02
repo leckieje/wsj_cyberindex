@@ -1198,11 +1198,19 @@
         const payload   = useRange
           ? { start_date: startDate, end_date: endDate }
           : { n_days: nDays };
-        const resp = await fetch('/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 270000);
+        let resp;
+        try {
+          resp = await fetch('/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
         const text = await resp.text();
         let data;
         try { data = JSON.parse(text); }
@@ -1235,7 +1243,11 @@
           showError('Error: ' + (data.message || 'Unknown error from server.'));
         }
       } catch (err) {
-        showError('Network error: ' + err.message);
+        if (err.name === 'AbortError') {
+          showError('Request timed out after ~4.5 minutes. The LSEG session may have gone stale — try again (the session will auto-reconnect).');
+        } else {
+          showError('Network error: ' + err.message);
+        }
       } finally {
         hideSpinner();
         pullBtn.disabled = false;
