@@ -1,5 +1,6 @@
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import lseg.data as ld
 import pandas as pd
@@ -167,7 +168,7 @@ def _latest_shares_outstanding(ids: list, start: date, end: date) -> dict:
     df = ld.get_history(
         universe=ids,
         fields=['TR.F.ComShrOutsTot'],
-        interval='10min',
+        interval='daily',
         start=str(start),
         end=str(end),
     )
@@ -250,21 +251,33 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
             if pd.notna(name)
         }
 
-        # ── 2+3. Prices (cached historical + live intraday) ────────────────
-        concatted, includes_daily = get_prices(
-            instruments=instruments, start=past, end=today, today=today,
-        )
-
-        # ── 4. Shares outstanding ─────────────────────────────────────────────
+        # ── 2+3+4. Prices + shares outstanding (parallel) ─────────────────
         cached_shares = _get_shares_cached(today) if today_is_settled else None
-        if cached_shares is not None and all(inst in cached_shares for inst in instruments):
-            shares = {inst: cached_shares[inst] for inst in instruments}
-        else:
-            shares = _latest_shares_outstanding(instruments, past, today)
-            if today_is_settled:
-                _cache_shares(today, shares)
+        shares_cached = cached_shares is not None and all(inst in cached_shares for inst in instruments)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            prices_future = pool.submit(
+                get_prices, instruments=instruments, start=past, end=today, today=today)
+
+            if shares_cached:
+                shares = {inst: cached_shares[inst] for inst in instruments}
+            else:
+                shares_future = pool.submit(
+                    _latest_shares_outstanding, instruments, past, today)
+
+            concatted, includes_daily = prices_future.result()
+
+            if not shares_cached:
+                shares = shares_future.result()
+                if today_is_settled:
+                    _cache_shares(today, shares)
 
         # ── 5. Localise to NY, filter to trading hours ────────────────────────
+        if concatted.empty:
+            raise RuntimeError(
+                f"No price data returned for {past} to {today}. "
+                "The market may not have opened yet today."
+            )
         if concatted.index.tz is None:
             concatted.index = concatted.index.tz_localize('UTC')
         concatted.index = concatted.index.tz_convert('America/New_York')

@@ -1,6 +1,7 @@
 import io
 import math
 import threading
+import time as _time
 import traceback
 from datetime import date
 
@@ -11,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import lseg.data as ld
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, redirect, render_template, request
 
 import data_pull
 from price_cache import run_verification
@@ -28,6 +29,8 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 # forked across multiple workers.
 
 _lseg_ready = False
+_lseg_last_used = 0.0
+_HEALTH_CHECK_INTERVAL = 300  # seconds
 
 def _open_lseg_session():
     global _lseg_ready
@@ -39,13 +42,15 @@ def _open_lseg_session():
     _lseg_ready = True
 
 def _ensure_lseg():
-    global _lseg_ready
+    global _lseg_ready, _lseg_last_used
     if not _lseg_ready:
         _open_lseg_session()
         return
-    # Fast health check: a cheap LSEG call to detect stale sessions
+    if (_time.time() - _lseg_last_used) < _HEALTH_CHECK_INTERVAL:
+        return
     try:
         ld.get_data(universe=["AAPL.OQ"], fields=["TR.PriceClose"])
+        _lseg_last_used = _time.time()
     except Exception:
         print("LSEG health check failed — reconnecting session")
         _lseg_ready = False
@@ -80,6 +85,8 @@ def _fmt_date(d: date) -> str:
 
 @app.route("/run", methods=["POST"])
 def run():
+    global _lseg_last_used
+
     body       = request.get_json(silent=True) or {}
     start_date = body.get("start_date") or None   # "YYYY-MM-DD" or None
     end_date   = body.get("end_date")   or None   # "YYYY-MM-DD" or None
@@ -87,86 +94,86 @@ def run():
 
     _ensure_lseg()
 
-    with _cache_lock:
+    try:
+        time_changes, top_20_out, past, today, cyber_index_close, includes_daily = data_pull.run_data_pull(
+            n_days=n_days, start_date=start_date, end_date=end_date)
+    except Exception as exc:
+        # One reconnect attempt in case the LSEG session went stale
         try:
+            _open_lseg_session()
             time_changes, top_20_out, past, today, cyber_index_close, includes_daily = data_pull.run_data_pull(
                 n_days=n_days, start_date=start_date, end_date=end_date)
-        except Exception as exc:
-            # One reconnect attempt in case the LSEG session went stale
-            try:
-                _open_lseg_session()
-                time_changes, top_20_out, past, today, cyber_index_close, includes_daily = data_pull.run_data_pull(
-                    n_days=n_days, start_date=start_date, end_date=end_date)
-            except Exception as retry_exc:
-                traceback.print_exc()
-                return jsonify({"status": "error", "message": str(retry_exc)}), 500
+        except Exception as retry_exc:
+            traceback.print_exc()
+            return jsonify({"status": "error", "message": str(retry_exc)}), 500
 
-        run_date = str(today)
+    _lseg_last_used = _time.time()
+
+    # Build CyberIndex summary row and prepend it to the table
+    display_cols = ["Company", "Ticker", "Exchange", "Date", "Price Close", "Period Change", "Market Cap"]
+    run_date = str(today)
+    cyber_period_change = time_changes["CyberIndex"].iloc[-1]
+    ci_row = pd.DataFrame([{
+        "Company":       "CyberIndex",
+        "Ticker":        "",
+        "Exchange":      "",
+        "Date":          str(today),
+        "Price Close":   f"${cyber_index_close:,.2f}",
+        "Period Change": f"{cyber_period_change * 100:.2f}%",
+        "Market Cap":    "",
+    }])
+    display_df = top_20_out[display_cols].copy().reset_index(drop=True)
+    display_df["Price Close"]   = display_df["Price Close"].apply(
+        lambda v: f"${v:,.2f}" if pd.notna(v) else "")
+    display_df["Period Change"] = display_df["Period Change"].apply(
+        lambda v: f"{v * 100:.2f}%" if pd.notna(v) else "")
+    display_df["Market Cap"]    = display_df["Market Cap"].apply(
+        lambda v: f"${v:,.0f}" if pd.notna(v) else "")
+    display_table = pd.concat([ci_row, display_df], ignore_index=True)
+    table_html = display_table.to_html(classes=["data-table"], border=0, index=False)
+
+    # Identify biggest gainer and loser by final % change (exclude Date and CyberIndex)
+    stock_cols = [c for c in time_changes.columns if c not in ("Date", "CyberIndex")]
+    final_row  = time_changes[stock_cols].iloc[-1]
+    gainer_name = final_row.idxmax()
+    loser_name  = final_row.idxmin()
+
+    # Pass CyberIndex, gainer, loser, and all company series to the frontend
+    def _clean(lst):
+        return [None if (isinstance(v, float) and math.isnan(v)) else v for v in lst]
+
+    chart_data = {
+        "labels":            time_changes["Date"].dt.strftime('%Y-%m-%d %H:%M').tolist(),
+        "cyber_index":       _clean(time_changes["CyberIndex"].tolist()),
+        "gainer_name":       gainer_name,
+        "gainer_values":     _clean(time_changes[gainer_name].tolist()),
+        "loser_name":        loser_name,
+        "loser_values":      _clean(time_changes[loser_name].tolist()),
+        "all_series":        {
+            col: _clean([round(v, 6) if not math.isnan(v) else None for v in time_changes[col].tolist()])
+            for col in stock_cols
+        },
+    }
+
+    with _cache_lock:
         _result_cache["time_changes"]      = time_changes
         _result_cache["top_20_out"]        = top_20_out
         _result_cache["run_date"]          = run_date
         _result_cache["cyber_index_close"] = cyber_index_close
-
-        # Build CyberIndex summary row and prepend it to the table
-        # Drop Instrument column — it's an internal RIC code not useful for display
-        display_cols = ["Company", "Ticker", "Exchange", "Date", "Price Close", "Period Change", "Market Cap"]
-        cyber_period_change = time_changes["CyberIndex"].iloc[-1]
-        ci_row = pd.DataFrame([{
-            "Company":       "CyberIndex",
-            "Ticker":        "",
-            "Exchange":      "",
-            "Date":          str(today),
-            "Price Close":   f"${cyber_index_close:,.2f}",
-            "Period Change": f"{cyber_period_change * 100:.2f}%",
-            "Market Cap":    "",
-        }])
-        display_df = top_20_out[display_cols].copy().reset_index(drop=True)
-        display_df["Price Close"]   = display_df["Price Close"].apply(
-            lambda v: f"${v:,.2f}" if pd.notna(v) else "")
-        display_df["Period Change"] = display_df["Period Change"].apply(
-            lambda v: f"{v * 100:.2f}%" if pd.notna(v) else "")
-        display_df["Market Cap"]    = display_df["Market Cap"].apply(
-            lambda v: f"${v:,.0f}" if pd.notna(v) else "")
-        display_table = pd.concat([ci_row, display_df], ignore_index=True)
-        table_html = display_table.to_html(classes=["data-table"], border=0, index=False)
-
-        # Identify biggest gainer and loser by final % change (exclude Date and CyberIndex)
-        stock_cols = [c for c in time_changes.columns if c not in ("Date", "CyberIndex")]
-        final_row  = time_changes[stock_cols].iloc[-1]
-        gainer_name = final_row.idxmax()
-        loser_name  = final_row.idxmin()
-
-        _result_cache["gainer_name"]         = gainer_name
-        _result_cache["loser_name"]          = loser_name
+        _result_cache["gainer_name"]       = gainer_name
+        _result_cache["loser_name"]        = loser_name
         _result_cache["cyber_period_change"] = cyber_period_change
 
-        # Pass CyberIndex, gainer, loser, and all company series to the frontend
-        def _clean(lst):
-            return [None if (isinstance(v, float) and math.isnan(v)) else v for v in lst]
-
-        chart_data = {
-            "labels":            time_changes["Date"].dt.strftime('%Y-%m-%d %H:%M').tolist(),
-            "cyber_index":       _clean(time_changes["CyberIndex"].tolist()),
-            "gainer_name":       gainer_name,
-            "gainer_values":     _clean(time_changes[gainer_name].tolist()),
-            "loser_name":        loser_name,
-            "loser_values":      _clean(time_changes[loser_name].tolist()),
-            "all_series":        {
-                col: _clean([round(v, 6) if not math.isnan(v) else None for v in time_changes[col].tolist()])
-                for col in stock_cols
-            },
-        }
-
-        resp = {
-            "status":       "ok",
-            "table_html":   table_html,
-            "run_date":     run_date,
-            "date_range":   f"{_fmt_date(past)} \u2013 {_fmt_date(today)}",
-            "chart_data":   chart_data,
-        }
-        if includes_daily:
-            resp["warning"] = "Dates before May 5, 2025 use daily close prices only (10-minute intraday data is not available from LSEG beyond 1 year)."
-        return jsonify(resp)
+    resp = {
+        "status":       "ok",
+        "table_html":   table_html,
+        "run_date":     run_date,
+        "date_range":   f"{_fmt_date(past)} – {_fmt_date(today)}",
+        "chart_data":   chart_data,
+    }
+    if includes_daily:
+        resp["warning"] = "Dates before May 5, 2025 use daily close prices only (10-minute intraday data is not available from LSEG beyond 1 year)."
+    return jsonify(resp)
 
 
 @app.route("/verify", methods=["POST"])
@@ -187,7 +194,7 @@ def download_charting():
         loser_name  = _result_cache["loser_name"]
 
     if df is None:
-        return "No data available — run a pull first.", 404
+        return redirect("/?error=no_data")
 
     df_out = df.copy()
 
@@ -232,7 +239,7 @@ def download_table():
         cyber_period_change = _result_cache["cyber_period_change"]
 
     if df is None:
-        return "No data available — run a pull first.", 404
+        return redirect("/?error=no_data")
 
     df_out = df.copy()
     ci_row = pd.DataFrame([{

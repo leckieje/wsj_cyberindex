@@ -386,6 +386,12 @@
     function showWarning(msg) { warningBanner.textContent = msg; warningBanner.style.display = 'block'; }
     function hideWarning()    { warningBanner.style.display = 'none'; }
     function hideError()    { errorBanner.style.display = 'none'; }
+
+    // Show error if redirected from a download with no cached data
+    if (new URLSearchParams(window.location.search).get('error') === 'no_data') {
+      showError('No data available — run a pull first, then download.');
+      history.replaceState(null, '', '/');
+    }
     function showResults()  { resultsSection.style.display = 'block'; }
 
     // ── Ticker → domain map for favicons ─────────────────────────────────────
