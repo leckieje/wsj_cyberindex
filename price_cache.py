@@ -139,7 +139,7 @@ def _contiguous_ranges(sorted_days: list) -> list:
     return ranges
 
 
-def _normalize_lseg_df(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_lseg_df(df: pd.DataFrame, instruments: list = None) -> pd.DataFrame:
     df = df.reset_index()
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [c[1] if c[1] else c[0] for c in df.columns]
@@ -149,9 +149,12 @@ def _normalize_lseg_df(df: pd.DataFrame) -> pd.DataFrame:
     ]
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df = df.set_index("timestamp").sort_index()
-    # Drop any leftover TRDPRC_1 column (appears when LSEG returns partial results)
+    # Single-instrument LSEG calls return "TRDPRC_1" instead of the RIC
     if "TRDPRC_1" in df.columns:
-        df = df.drop(columns=["TRDPRC_1"])
+        if instruments and len(instruments) == 1:
+            df = df.rename(columns={"TRDPRC_1": instruments[0]})
+        else:
+            df = df.drop(columns=["TRDPRC_1"])
     return df
 
 
@@ -231,7 +234,7 @@ def _verify_day(day_str: str, instruments: list) -> int:
             start=str(day),
             end=f"{day} 23:59:59",
         )
-        fetched = _normalize_lseg_df(fetched)
+        fetched = _normalize_lseg_df(fetched, instruments)
         if fetched.index.tz is None:
             fetched.index = fetched.index.tz_localize("UTC")
         fetched.index = fetched.index.tz_convert("America/New_York")
@@ -412,7 +415,7 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> tuple:
                     start=str(range_start),
                     end=str(range_end),
                 )
-                fetched = _normalize_lseg_df(fetched)
+                fetched = _normalize_lseg_df(fetched, insts_needed)
 
                 # Daily data comes without time — assign 16:00 ET (market close)
                 if fetched.index.tz is None:
@@ -500,7 +503,7 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> tuple:
                 start=str(range_start),
                 end=f"{range_end} 23:59:59",
             )
-            fetched = _normalize_lseg_df(fetched)
+            fetched = _normalize_lseg_df(fetched, insts_needed)
 
             if fetched.index.tz is None:
                 fetched.index = fetched.index.tz_localize("UTC")
@@ -535,7 +538,7 @@ def get_prices(instruments: list, start: date, end: date, today: date) -> tuple:
             kwargs["end"] = f"{day} 23:59:59"
 
         live_df = ld.get_history(**kwargs)
-        live_df = _normalize_lseg_df(live_df)
+        live_df = _normalize_lseg_df(live_df, instruments)
         if live_df.index.tz is None:
             live_df.index = live_df.index.tz_localize("UTC")
         else:
