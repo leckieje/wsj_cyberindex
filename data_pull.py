@@ -16,7 +16,7 @@ IDS = [
     'PANW.OQ', 'CRWD.OQ', 'FTNT.OQ', 'ZS.OQ',   'CHKP.OQ', 'OKTA.OQ',
     'FFIV.OQ', 'AKAM.OQ', 'SAIL.OQ', 'VRNS.OQ',  'QLYS.OQ',
     'TENB.OQ', 'NTCT.OQ', 'RDWR.OQ', 'RPD.OQ',   'TLS.OQ',  'HUBC.OQ',
-    'CYCU.OQ', 'NET.N',   'LDOS.N',  'RBRK.N',   'S.N',     'LUMN.N',
+    'CYCU.OQ', 'NET.N',   'LDOS.N',  'RBRK.N',   'S.N',     'LUMN.OQ',
     'ATEN.N',  'CVLT.OQ',
 ]
 
@@ -293,6 +293,13 @@ def run_data_pull(n_days: int = 5, end_date=None, start_date=None) -> tuple:
                 f"No trading-hours data found for {past} to {today}. "
                 "The market may not have opened yet today."
             )
+        stale_instruments = [
+            col for col in concatted.columns
+            if concatted[col].isna().all()
+        ]
+        if stale_instruments:
+            print(f"WARNING: instruments with no price data (possible exchange change): {stale_instruments}")
+
         concatted = concatted.ffill().bfill()
 
         # ── 6. CyberIndex (market-cap-weighted average price) ─────────────────

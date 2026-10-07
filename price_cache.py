@@ -79,6 +79,8 @@ def _write_cached_day(trading_date: date, instrument: str, df: pd.DataFrame):
             "timestamp": ts.isoformat(),
             "TRDPRC_1": float(val) if pd.notna(val) else None,
         })
+    if not any(r["TRDPRC_1"] is not None for r in records):
+        return
     payload = {
         "instrument": instrument,
         "date": trading_date.isoformat(),
